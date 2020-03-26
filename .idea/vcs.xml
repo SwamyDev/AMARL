@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/external/ray" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/external/sequential_social_dilemma_games" vcs="Git" />
+  </component>
+</project>

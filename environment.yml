@@ -1,0 +1,10 @@
+name: AMARL
+
+channels:
+  - pytorch
+  -
+dependencies:
+  - python==3.6.7
+  - pytorch
+  - pip:
+      - click

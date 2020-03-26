@@ -1,0 +1,6 @@
+[submodule "external/sequential_social_dilemma_games"]
+	path = external/sequential_social_dilemma_games
+	url = https://github.com/eugenevinitsky/sequential_social_dilemma_games.git
+[submodule "external/ray"]
+	path = external/ray
+	url = https://github.com/natashamjaques/ray.git
