@@ -2,9 +2,11 @@ name: AMARL
 
 channels:
   - pytorch
-  -
 dependencies:
   - python==3.6.7
+  - pip
   - pytorch
+  - torchvision
   - pip:
       - click
+      - pyglet<=1.3.2

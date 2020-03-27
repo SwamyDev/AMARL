@@ -22,20 +22,23 @@ clean:
 	rm --force --recursive dist/
 	rm --force --recursive *.egg-info
 
-env_done:
+external/sequential_social_dilemma_games/env.done:
 	conda env update -n ${ENV_NAME} -f external/sequential_social_dilemma_games/environment.yml
 	cd external/sequential_social_dilemma_games/; python setup.py develop
 	cd external/ray/python/ray/rllib/; python setup-rllib-dev.py --yes
 	cd external/sequential_social_dilemma_games; python -m pytest
+	touch external/sequential_social_dilemma_games/env.done
+
+env.done: external/sequential_social_dilemma_games/env.done
 	conda env update -n ${ENV_NAME} -f environment.yml
 	pip install -e .
-	touch env_done
+	touch env.done
 
-setup: env_done
+setup: env.done
 
-env_test_done: env_done
+env_test.done: env.done
 	pip install -e .[test]
-	touch env_test_done
+	touch env_test.done
 
-test: env_test_done
+test: env_test.done
 	pytest --verbose --color=yes --cov=amarl --cov-report term-missing tests
