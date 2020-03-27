@@ -60,8 +60,12 @@ def cli(ctx, environment, num_agents, log_level):   # pragma: no cover
 
 
 @cli.command()
+@click.option('-r', '--render', default=True, type=click.BOOL, help="render the environment. default: true")
 @click.pass_context
-def explore(ctx):   # pragma: no cover
+def explore(ctx, render):   # pragma: no cover
+    if render:
+        plt.ion()
+
     env = ctx.obj['env_selected']()
     logger.info(f"Observations space: {env.observation_space}")
     logger.info(f"Action space: {env.action_space}")
@@ -69,15 +73,16 @@ def explore(ctx):   # pragma: no cover
 
     for agent_id in env.agents:
         logger.info(f"{agent_id}: action space: {env.agents[agent_id].action_space}")
-
-    plt.ion()
-    done = False
-    env.reset()
     last_rewards = deque(maxlen=100)
 
+    obs = env.reset()
+    logger.info(f"Example observation: {obs}")
+
+    done = False
     while not done:
-        plt.pause(0.001)
-        env.render()
+        if render:
+            plt.pause(0.001)
+            env.render()
         actions = {agent_id: env.agents[agent_id].action_space.sample() for agent_id in env.agents}
         _, rewards, dones, _ = env.step(actions)
 
