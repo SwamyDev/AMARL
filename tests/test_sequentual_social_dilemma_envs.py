@@ -1,14 +1,6 @@
 from social_dilemmas.envs.harvest import HarvestEnv
 
-# Maps for Harvest
-MINI_HARVEST_MAP = [
-    '@@@@@@',
-    '@ P  @',
-    '@  AA@',
-    '@  AA@',
-    '@  AP@',
-    '@@@@@@',
-]
+from amarl.maps import MINI_HARVEST_MAP
 
 
 def test_harvest_map():

@@ -21,5 +21,8 @@ setup(
     extras_require={"test": ['pytest', 'pytest-cov', 'pytest-rerunfailures==7', 'gym-quickcheck']},
     include_package_data=True,
     zip_safe=False,
-    python_requires='>=3.6,<3.8'
+    python_requires='>=3.6,<3.8',
+    entry_points={
+        'console_scripts': ['amarl = amarl:cli']
+    }
 )
