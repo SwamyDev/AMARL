@@ -57,3 +57,32 @@ class CommunicationNet(nn.Module):
         msg_v = self.message_v(msg_enc)
 
         return act_dists, act_v, msg_dists, msg_v
+
+
+class A2CNet(nn.Module):
+    def __init__(self, view_dims, num_actions):
+        super().__init__()
+        self.cv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
+        self.bn1 = nn.BatchNorm2d(16)
+        self.cv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.cv3 = nn.Conv2d(32, 32, kernel_size=5, stride=2)
+        self.bn3 = nn.BatchNorm2d(32)
+
+        cv2d_w = cv2d_size_out(cv2d_size_out(cv2d_size_out(view_dims[0], 5, 2), 5, 2), 5, 2)
+        cv2d_h = cv2d_size_out(cv2d_size_out(cv2d_size_out(view_dims[1], 5, 2), 5, 2), 5, 2)
+        flattened = cv2d_w * cv2d_h * 32
+
+        self.pi = nn.Linear(flattened, num_actions)
+        self.v = nn.Linear(flattened, 1)
+
+    def forward(self, obs):
+        obs = F.relu(self.bn1(self.cv1(obs)))
+        obs = F.relu(self.bn2(self.cv2(obs)))
+        obs = F.relu(self.bn3(self.cv3(obs)))
+        obs = obs.view(obs.size(0), -1)
+
+        logits = self.pi(obs)
+        dists = Categorical(logits=logits)
+        vs = self.v(obs)
+        return dists, vs
