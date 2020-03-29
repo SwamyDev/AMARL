@@ -84,7 +84,7 @@ def explore(ctx, render):   # pragma: no cover
             plt.pause(0.001)
             env.render()
         actions = {agent_id: env.agents[agent_id].action_space.sample() for agent_id in env.agents}
-        _, rewards, dones, _ = env.step(actions)
+        obs, rewards, dones, infos = env.step(actions)
 
         last_rewards.append(rewards)
         avg = calc_average(last_rewards)
