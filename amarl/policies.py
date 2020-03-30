@@ -21,7 +21,7 @@ class RandomPolicy(Policy):
         self._action_space = action_space
 
     def compute_actions(self, observations):
-        return [self._action_space.sample() for _ in range(len(observations))]
+        return np.array([self._action_space.sample() for _ in range(len(observations))]), None
 
     def learn_on_batch(self, batch):
         pass
@@ -40,16 +40,16 @@ class A2CPolicy(Policy):
         self._optimizer = torch.optim.RMSprop(self._model.parameters(), lr=1e-4, alpha=0.99, eps=1e-5)
 
     def compute_actions(self, observations):
-        acts_dist, vs = self._model(observations.to(self._device))
+        acts_dist, vs = self._model(torch.from_numpy(observations).to(self._device))
         a = acts_dist.sample()
         return a, {'vs': vs.squeeze(dim=1), 'act_dists': acts_dist}
 
-    def learn_on_batch(self, batch):
-        _, next_vs = self._model(batch['last_obs'].to(self._device))
+    def learn_on_batch(self, rollout):
+        _, next_vs = self._model(torch.from_numpy(rollout['last_obs']).to(self._device))
         next_return = next_vs.squeeze(dim=1)
-        rewards = torch.stack(batch['rewards']).to(self._device)
-        dones = torch.stack(batch['dones']).to(torch.uint8).to(self._device)
-        vs = torch.stack(batch['vs'])
+        rewards = torch.from_numpy(np.stack(rollout['rewards'])).to(self._device)
+        dones = torch.from_numpy(np.stack(rollout['dones'])).to(torch.uint8).to(self._device)
+        vs = torch.stack(rollout['vs'])
 
         returns = torch.empty_like(rewards)
         advantages = torch.empty_like(rewards)
@@ -58,8 +58,8 @@ class A2CPolicy(Policy):
             returns[i] = next_return
             advantages[i] = next_return - vs[i]
 
-        actions = batch['actions']
-        act_dist = batch['act_dists']
+        actions = rollout['actions']
+        act_dist = rollout['act_dists']
         log_prob = torch.stack([d.log_prob(a) for a, d in zip(actions, act_dist)])
         entropy = torch.stack([d.entropy() for d in act_dist])
 

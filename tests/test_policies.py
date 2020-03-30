@@ -6,6 +6,7 @@ import numpy as np
 from gym.spaces import Box, Discrete
 
 from amarl.policies import A2CPolicy
+from amarl.workers import RolloutBatch
 
 
 @pytest.fixture(scope='session')
@@ -33,7 +34,7 @@ def a2c(observation_space, action_space, device):
 @pytest.fixture
 def make_observation_batch(observation_space):
     def factory(size=3):
-        return torch.empty(size, 3, *observation_space.shape).uniform_(0, 1)
+        return np.random.rand(size, 3, *observation_space.shape).astype(np.float32)
 
     return factory
 
@@ -49,13 +50,11 @@ def test_a2c_can_be_trained_to_prefer_a_certain_action_when_in_a_certain_state(a
     rollout_length = 5
     batch_size = 16
     obs = make_observation_batch(batch_size)
+    dones = [make_sparse_dones(batch_size) for _ in range(rollout_length)]
 
     action_dists = []
-    training_batch = dict(actions=[], act_dists=[], vs=[], last_obs=obs)
-    training_batch['dones'] = [make_sparse_dones(batch_size) for _ in range(rollout_length)]
     for _ in range(1000):
-        training_batch.update(make_rollout(a2c, rollout_length, static_obs=obs))
-        a2c.learn_on_batch(training_batch)
+        a2c.learn_on_batch(make_rollout(a2c, rollout_length, static_obs=obs, static_dones=dones))
         actions, _ = a2c.compute_actions(obs)
         dist = action_distribution(actions.cpu().numpy(), index=1)
         action_dists.append(dist)
@@ -66,23 +65,26 @@ def test_a2c_can_be_trained_to_prefer_a_certain_action_when_in_a_certain_state(a
     assert action_increase >= 1.2
 
 
-def make_rollout(a2c, rollout_length, static_obs):
-    batch = dict(actions=[], act_dists=[], vs=[])
+def make_rollout(a2c, rollout_length, static_obs, static_dones):
+    rollout = RolloutBatch()
     for _ in range(rollout_length):
-        acts, infos = a2c.compute_actions(static_obs)
-        batch['actions'].append(acts)
-        batch['act_dists'].append(infos['act_dists'])
-        batch['vs'].append(infos['vs'])
-    batch['rewards'] = reward_certain_action(batch['actions'], action_to_reward=1)
-    return batch
+        acts, additional = a2c.compute_actions(static_obs)
+        elements = dict(actions=acts)
+        elements.update(additional)
+        rollout.append(elements)
+
+    rollout.set_element('rewards', reward_certain_action(rollout['actions'], action_to_reward=1))
+    rollout.set_element('dones', static_dones)
+    rollout.set_element('last_obs', static_obs)
+    return rollout
 
 
 def reward_certain_action(actions, action_to_reward):
-    return [(a == action_to_reward) * 2 - 1 for a in actions]
+    return [((a == action_to_reward) * 2 - 1).cpu().numpy() for a in actions]
 
 
 def make_sparse_dones(size):
-    return torch.empty(size).uniform_() > 0.9
+    return np.random.rand(size) > 0.9
 
 
 def action_distribution(actions, index):
