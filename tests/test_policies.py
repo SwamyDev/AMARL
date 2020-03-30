@@ -4,9 +4,15 @@ import pytest
 import torch
 import numpy as np
 from gym.spaces import Box, Discrete
-from pytest import approx
 
 from amarl.policies import A2CPolicy
+
+
+@pytest.fixture(scope='session')
+def device():
+    d = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using torch device: {d}")
+    return d
 
 
 @pytest.fixture
@@ -20,8 +26,8 @@ def action_space():
 
 
 @pytest.fixture
-def a2c(observation_space, action_space):
-    return A2CPolicy(observation_space, action_space)
+def a2c(observation_space, action_space, device):
+    return A2CPolicy(observation_space, action_space, device=device)
 
 
 @pytest.fixture
@@ -44,18 +50,15 @@ def test_a2c_can_be_trained_to_prefer_a_certain_action_when_in_a_certain_state(a
     batch_size = 16
     obs = make_observation_batch(batch_size)
 
-    actions, _ = a2c.compute_actions(obs)
-    assert action_distribution(actions.cpu().numpy(), index=1) <= 0.7
-
     action_dists = []
     training_batch = dict(actions=[], act_dists=[], vs=[], last_obs=obs)
     training_batch['dones'] = [make_sparse_dones(batch_size) for _ in range(rollout_length)]
     for _ in range(1000):
-        dist = action_distribution(actions.cpu().numpy(), index=1)
-        action_dists.append(dist)
         training_batch.update(make_rollout(a2c, rollout_length, static_obs=obs))
         a2c.learn_on_batch(training_batch)
         actions, _ = a2c.compute_actions(obs)
+        dist = action_distribution(actions.cpu().numpy(), index=1)
+        action_dists.append(dist)
 
     start_avg = sum(action_dists[:100]) / 100
     end_avg = sum(action_dists[-100:]) / 100

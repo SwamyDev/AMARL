@@ -1,5 +1,6 @@
 import abc
 import torch
+import torch.nn as nn
 import numpy as np
 
 from amarl.models import A2CNet
@@ -27,23 +28,27 @@ class RandomPolicy(Policy):
 
 
 class A2CPolicy(Policy):
-    def __init__(self, observation_space, action_space, gamma=0.99, entropy_loss_weight=0.01, value_loss_weight=0.5):
-        self._model = A2CNet(observation_space.shape, action_space.n)
+    def __init__(self, observation_space, action_space, gamma=0.99, entropy_loss_weight=0.01, value_loss_weight=0.5,
+                 gradient_clip=5, device='cpu'):
         self._gamma = gamma
         self._entropy_loss_weight = entropy_loss_weight
         self._value_loss_weight = value_loss_weight
+        self._gradient_clip = gradient_clip
+        self._device = device
+
+        self._model = A2CNet(observation_space.shape, action_space.n).to(self._device)
         self._optimizer = torch.optim.RMSprop(self._model.parameters(), lr=1e-4, alpha=0.99, eps=1e-5)
 
     def compute_actions(self, observations):
-        acts_dist, vs = self._model(observations)
+        acts_dist, vs = self._model(observations.to(self._device))
         a = acts_dist.sample()
         return a, {'vs': vs.squeeze(dim=1), 'act_dists': acts_dist}
 
     def learn_on_batch(self, batch):
-        _, next_vs = self._model(batch['last_obs'])
+        _, next_vs = self._model(batch['last_obs'].to(self._device))
         next_return = next_vs.squeeze(dim=1)
-        rewards = torch.from_numpy(np.stack(batch['rewards']))
-        dones = torch.from_numpy(np.stack(batch['dones'])).int()
+        rewards = torch.stack(batch['rewards']).to(self._device)
+        dones = torch.stack(batch['dones']).to(torch.uint8).to(self._device)
         vs = torch.stack(batch['vs'])
 
         returns = torch.empty_like(rewards)
@@ -65,6 +70,7 @@ class A2CPolicy(Policy):
 
         self._optimizer.zero_grad()
         total_loss.backward()
+        nn.utils.clip_grad_norm_(self._model.parameters(), self._gradient_clip)
         self._optimizer.step()
 
 
