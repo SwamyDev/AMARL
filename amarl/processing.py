@@ -29,6 +29,9 @@ def proc_screen(screen, player_pos):
 
 
 def get_cart_pos_normalized(env, width_px):
+    while env.unwrapped is not None and not hasattr(env, 'x_threshold'):
+        env = env.unwrapped
+
     world_width = env.x_threshold * 2
     scale = width_px / world_width
     return int(env.state[0] * scale + width_px / 2.0)

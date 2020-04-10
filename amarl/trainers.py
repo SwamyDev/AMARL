@@ -5,7 +5,8 @@ from amarl.workers import RolloutWorker
 class A2CTrainer:
     def __init__(self, env, config):
         self._rollout_length = config['rollout_length']
-        self._policy = A2CPolicy()
+        self._policy = A2CPolicy(env.observation_space, env.action_space, gradient_clip=config.get('gradient_clip', 5),
+                                 device=config.get('device', 'cpu'))
         self._worker = RolloutWorker(env, self._policy)
 
     def train(self):

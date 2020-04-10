@@ -16,7 +16,7 @@ def test_processing_image_crops_image_at_borders_correctly_when_player_is_moving
 
 
 def test_get_normalized_position_of_cart_from_cart_pole_env():
-    env = gym.make('CartPole-v0').unwrapped
+    env = gym.make('CartPole-v0')
     env.seed(42)
     env.reset()
     assert get_cart_pos_normalized(env, 600) == 298

@@ -1,8 +1,6 @@
-from collections import deque
-
+import numpy as np
 import pytest
 import torch
-import numpy as np
 from gym.spaces import Box, Discrete
 
 from amarl.policies import A2CPolicy
@@ -18,7 +16,7 @@ def device():
 
 @pytest.fixture
 def observation_space():
-    return Box(0, 1, shape=(32, 32), dtype=np.float32)
+    return Box(0, 1, shape=(4, 84, 84), dtype=np.float32)
 
 
 @pytest.fixture
@@ -34,7 +32,7 @@ def a2c(observation_space, action_space, device):
 @pytest.fixture
 def make_observation_batch(observation_space):
     def factory(size=3):
-        return np.random.rand(size, 3, *observation_space.shape).astype(np.float32)
+        return np.random.rand(size, *observation_space.shape).astype(np.float32)
 
     return factory
 
@@ -46,23 +44,25 @@ def test_a2c_produces_computes_correct_action(a2c, make_observation_batch, actio
     assert actions.min() == 0 and actions.max() == (action_space.n - 1)
 
 
+@pytest.mark.flaky(reruns=2)
 def test_a2c_can_be_trained_to_prefer_a_certain_action_when_in_a_certain_state(a2c, make_observation_batch):
     rollout_length = 5
     batch_size = 16
     obs = make_observation_batch(batch_size)
     dones = [make_sparse_dones(batch_size) for _ in range(rollout_length)]
 
-    action_dists = []
-    for _ in range(1000):
-        a2c.learn_on_batch(make_rollout(a2c, rollout_length, static_obs=obs, static_dones=dones))
-        actions, _ = a2c.compute_actions(obs)
-        dist = action_distribution(actions.cpu().numpy(), index=1)
-        action_dists.append(dist)
+    initial_dist = get_action_probabilities(*a2c.compute_actions(obs))
+    assert initial_dist[1] < 0.6
 
-    start_avg = sum(action_dists[:100]) / 100
-    end_avg = sum(action_dists[-100:]) / 100
-    action_increase = end_avg / start_avg
-    assert action_increase >= 1.2
+    for _ in range(100):
+        a2c.learn_on_batch(make_rollout(a2c, rollout_length, static_obs=obs, static_dones=dones))
+
+    trained_dist = get_action_probabilities(*a2c.compute_actions(obs))
+    assert trained_dist[1] >= 0.9999
+
+
+def get_action_probabilities(_, additional):
+    return additional['act_dists'].probs.detach().cpu().numpy()[0]
 
 
 def make_rollout(a2c, rollout_length, static_obs, static_dones):

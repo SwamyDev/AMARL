@@ -1,5 +1,5 @@
 import abc
-from collections import deque, defaultdict
+from collections import deque
 
 import click
 import logging
@@ -9,6 +9,7 @@ from social_dilemmas.envs.cleanup import CleanupEnv
 from social_dilemmas.envs.harvest import HarvestEnv
 
 from amarl.maps import MINI_HARVEST_MAP, FIRING_CLEANUP_MAP
+from amarl.metrics import calc_average
 
 logger = logging.getLogger(__name__)
 
@@ -96,14 +97,6 @@ def explore(ctx, render):   # pragma: no cover
         logger.debug(f"dones: {dones}")
         done = dones['__all__']
     print("\n")
-
-
-def calc_average(last_rewards):
-    avg = defaultdict(lambda: 0)
-    for r in last_rewards:
-        for i in r:
-            avg[i] += r[i] / len(last_rewards)
-    return avg
 
 
 if __name__ == '__main__':

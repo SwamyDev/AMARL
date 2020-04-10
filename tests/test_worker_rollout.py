@@ -1,6 +1,7 @@
 import gym
 import pytest
 import numpy as np
+import torch
 
 from amarl.policies import RandomPolicy
 from amarl.workers import RolloutWorker
@@ -17,7 +18,7 @@ class PolicyStub(RandomPolicy):
 
     def compute_actions(self, observations):
         acts, _ = super().compute_actions(observations)
-        return acts, self._info_dict
+        return torch.from_numpy(acts), self._info_dict
 
 
 class PolicySpy(PolicyStub):

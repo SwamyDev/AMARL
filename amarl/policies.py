@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from amarl.models import A2CNet
+from amarl.models import A2CNet, A2CLinearNet
 
 
 class Policy(abc.ABC):
@@ -46,29 +46,34 @@ class A2CPolicy(Policy):
 
     def learn_on_batch(self, rollout):
         _, next_vs = self._model(torch.from_numpy(rollout['last_obs']).to(self._device))
-        next_return = next_vs.squeeze(dim=1)
-        rewards = torch.from_numpy(np.stack(rollout['rewards'])).to(self._device)
-        dones = torch.from_numpy(np.stack(rollout['dones'])).to(torch.uint8).to(self._device)
-        vs = torch.stack(rollout['vs'])
+        next_return = next_vs.squeeze(dim=1).detach()
+        rewards = rollout['rewards']
+        dones = rollout['dones']
+        vs = rollout['vs']
 
-        returns = torch.empty_like(rewards)
-        advantages = torch.empty_like(rewards)
-        for i in reversed(range(len(rewards))):
-            next_return = rewards[i] + self._gamma * (1 - dones[i]) * next_return
-            returns[i] = next_return
-            advantages[i] = next_return - vs[i]
+        returns = [None] * len(rollout)
+        advantages = [None] * len(rollout)
+        for i in reversed(range(len(rollout))):
+            r = torch.from_numpy(rewards[i]).to(self._device)
+            d = torch.from_numpy(dones[i]).to(torch.uint8).to(self._device)
+            next_return = r + self._gamma * (1 - d) * next_return
+            advantages[i] = next_return - vs[i].detach()
+            returns[i] = next_return.detach()
 
+        adv = torch.cat(advantages)
+        ret = torch.cat(returns)
+        v = torch.cat(vs)
         actions = rollout['actions']
         act_dist = rollout['act_dists']
-        log_prob = torch.stack([d.log_prob(a) for a, d in zip(actions, act_dist)])
-        entropy = torch.stack([d.entropy() for d in act_dist])
+        log_prob = torch.cat([d.log_prob(a) for a, d in zip(actions, act_dist)], dim=0)
+        entropy = torch.cat([d.entropy() for d in act_dist], dim=0)
 
-        policy_loss = -(log_prob * advantages).mean()
-        value_loss = (returns - vs).pow(2).mean()
+        policy_loss = -(log_prob * adv).mean()
+        value_loss = (ret - v).pow(2).mean()
         entropy_loss = entropy.mean()
-        total_loss = policy_loss - self._entropy_loss_weight * entropy_loss + self._value_loss_weight * value_loss
 
         self._optimizer.zero_grad()
+        total_loss = policy_loss - self._entropy_loss_weight * entropy_loss + self._value_loss_weight * value_loss
         total_loss.backward()
         nn.utils.clip_grad_norm_(self._model.parameters(), self._gradient_clip)
         self._optimizer.step()

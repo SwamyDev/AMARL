@@ -1,6 +1,6 @@
 import torch
 
-from amarl.models import CommunicationNet, A2CNet
+from amarl.models import CommunicationNet, A2CNet, A2CLinearNet
 
 
 def test_communication_net_infers_all_parameters_correctly():
@@ -15,8 +15,17 @@ def test_communication_net_infers_all_parameters_correctly():
 
 
 def test_a2c_net_infers_all_parameters_correctly():
-    model = A2CNet(view_dims=(40, 40), num_actions=2)
-    observations = torch.randn(4, 3, 40, 40)
+    model = A2CNet(view_dims=(3, 128, 128), num_actions=2)
+    observations = torch.randn(4, 3, 128, 128)
+
+    action_dists, action_values = model(observations)
+
+    assert action_dists.param_shape == (4, 2) and action_values.shape == (4, 1)
+
+
+def test_a2c_linear_net_infers_all_parameters_correctly():
+    model = A2CLinearNet(observation_size=8, num_actions=2)
+    observations = torch.randn(4, 8)
 
     action_dists, action_values = model(observations)
 
