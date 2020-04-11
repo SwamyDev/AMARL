@@ -8,7 +8,7 @@ import torch
 from gym.spaces import Box
 
 from amarl.wrappers import MultipleEnvs, active_gym, RenderedObservation, NoOpResetEnv, MaxAndSkipEnv, EpisodicLifeEnv, \
-    SignReward, TorchObservation, StackFrames
+    SignReward, TorchObservation, StackFrames, OriginalReturnWrapper
 
 
 class EnvStub(gym.Env):
@@ -32,6 +32,8 @@ class EnvStub(gym.Env):
         self._return_obs = None
         self._return_infos = None
         self._return_rewards = None
+        self._is_done_at_step = None
+        self._steps = 0
 
     def set_lives(self, lives):
         self.ale.set_lives(lives)
@@ -48,14 +50,20 @@ class EnvStub(gym.Env):
     def set_returns_rewards(self, rewards):
         self._return_rewards = deque(rewards)
 
+    def set_is_done_at_step(self, step):
+        self._is_done_at_step = step
+
     def get_action_meanings(self):
         return ['NOOP']
 
     def step(self, action):
+        self._steps += 1
         o = np.zeros(self.observation_space.shape) if self._return_obs is None else self._return_obs.popleft()
-        d = False if self._return_obs is None else len(self._return_obs) == 0
         i = {'info': "dummy"} if self._return_infos is None else self._return_infos.popleft()
         r = 1 if self._return_rewards is None else self._return_rewards.popleft()
+        d = False if self._return_obs is None else len(self._return_obs) == 0
+        d = d if self._return_rewards is None else len(self._return_rewards) == 0
+        d = d if self._is_done_at_step is None else self._steps == self._is_done_at_step
         return o, r, d, i
 
     def reset(self):
@@ -66,9 +74,10 @@ class EnvStub(gym.Env):
 
 
 class EnvSpy(EnvStub):
-    def __init__(self, recorded_close_calls):
+    def __init__(self, recorded_close_calls, recorded_render_calls):
         super().__init__()
         self._recorded_close_calls = recorded_close_calls
+        self._recorded_render_calls = recorded_render_calls
         self.num_noop_actions_received = 0
         self.num_resets_received = 0
         self.last_action_received = None
@@ -84,6 +93,10 @@ class EnvSpy(EnvStub):
         self.num_resets_received += 1
         return super().reset()
 
+    def render(self, mode='human'):
+        self._recorded_render_calls.append(mode)
+        return super().render(mode)
+
     def close(self):
         super().close()
         self._recorded_close_calls.append(self)
@@ -95,13 +108,18 @@ def recorded_close_calls():
 
 
 @pytest.fixture
-def env_spy(recorded_close_calls):
-    return EnvSpy(recorded_close_calls)
+def recorded_render_calls():
+    return list()
 
 
 @pytest.fixture
-def multiple_envs(recorded_close_calls):
-    return MultipleEnvs(lambda: EnvSpy(recorded_close_calls), 5)
+def env_spy(recorded_close_calls, recorded_render_calls):
+    return EnvSpy(recorded_close_calls, recorded_render_calls)
+
+
+@pytest.fixture
+def multiple_envs(recorded_close_calls, recorded_render_calls):
+    return MultipleEnvs(lambda: EnvSpy(recorded_close_calls, recorded_render_calls), 5)
 
 
 @pytest.fixture
@@ -149,9 +167,19 @@ def stack_env(torch_env, stack_size):
     return StackFrames(torch_env, size=stack_size)
 
 
+@pytest.fixture
+def return_env(env_spy):
+    return OriginalReturnWrapper(env_spy)
+
+
 def test_multiple_envs_wrapper_closes_all_created_envs(recorded_close_calls, multiple_envs):
     multiple_envs.close()
     assert len(recorded_close_calls) == 5
+
+
+def test_multiple_envs_wrapper_passes_on_render_call(recorded_render_calls, multiple_envs):
+    multiple_envs.render()
+    assert len(recorded_render_calls) == 5
 
 
 def test_gym_context_manager_cleans_up_environment_even_when_error_is_raised(recorded_close_calls, env_spy):
@@ -186,6 +214,13 @@ def test_noop_reset_skips_random_number_of_frames_at_the_start_via_special_noop(
     env_spy.num_noop_actions_receive = 0
     noop_env.reset()
     assert env_spy.num_noop_actions_received == 27
+
+
+def test_noop_resets_again_when_environment_resets_during_noop_loop(env_spy, noop_env):
+    noop_env.unwrapped.np_random.seed(42)
+    env_spy.set_is_done_at_step(4)
+    noop_env.reset()
+    assert env_spy.num_resets_received == 2
 
 
 def test_noop_reset_passes_on_step_unmodified(env_spy, noop_env):
@@ -336,3 +371,40 @@ def test_stack_frames_appends_next_frame_to_stack_on_step(stack_env, stack_size)
 
 def assert_obs_not_eq(actual, expected):
     assert (actual != expected).any()
+
+
+def test_episodic_return_is_none_when_environment_is_not_done(return_env):
+    return_env.reset()
+    assert unwrap_info(return_env.step(0))['episodic_return'] is None
+
+
+def test_episodic_return_is_accumulated_reward_when_environment_is_done(return_env, env_spy):
+    rewards = [1, 2, -1]
+    env_spy.set_returns_rewards(rewards)
+
+    return_env.reset()
+    for _ in range(len(rewards) - 1):
+        return_env.step(0)
+
+    assert unwrap_info(return_env.step(0))['episodic_return'] == 2
+
+
+def test_episodic_return_is_accumulated_reward_is_reset_after_done(return_env, env_spy):
+    rewards = [1, 2, -1]
+    env_spy.set_returns_rewards(rewards)
+
+    return_env.reset()
+    for _ in range(len(rewards)):
+        return_env.step(0)
+
+    rewards = [1, 0, -2]
+    env_spy.set_returns_rewards(rewards)
+    for _ in range(len(rewards) - 1):
+        return_env.step(0)
+
+    assert unwrap_info(return_env.step(0))['episodic_return'] == -1
+
+
+def test_episodic_return_passes_on_reset_call(return_env, env_spy):
+    return_env.reset()
+    assert env_spy.num_resets_received == 1

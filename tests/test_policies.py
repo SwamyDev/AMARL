@@ -37,6 +37,11 @@ def make_observation_batch(observation_space):
     return factory
 
 
+def random_seed(seed):
+    np.random.seed(seed)
+    torch.manual_seed(np.random.randint(int(1e6)))
+
+
 def test_a2c_produces_computes_correct_action(a2c, make_observation_batch, action_space):
     actions, _ = a2c.compute_actions(make_observation_batch(100))
     actions = actions.cpu().numpy()
@@ -44,8 +49,8 @@ def test_a2c_produces_computes_correct_action(a2c, make_observation_batch, actio
     assert actions.min() == 0 and actions.max() == (action_space.n - 1)
 
 
-@pytest.mark.flaky(reruns=2)
 def test_a2c_can_be_trained_to_prefer_a_certain_action_when_in_a_certain_state(a2c, make_observation_batch):
+    random_seed(42)
     rollout_length = 5
     batch_size = 16
     obs = make_observation_batch(batch_size)
