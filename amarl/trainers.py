@@ -2,16 +2,27 @@ from amarl.policies import CommunicationPolicy, A2CPolicy
 from amarl.workers import RolloutWorker
 
 
-class A2CTrainer:
-    def __init__(self, env, config):
-        self._rollout_length = config['rollout_length']
-        self._policy = A2CPolicy(env.observation_space, env.action_space, gradient_clip=config.get('gradient_clip', 5),
-                                 device=config.get('device', 'cpu'))
-        self._worker = RolloutWorker(env, self._policy)
+class PolicyOptimizationTrainer:
+    def __init__(self, worker, policy, rollout_horizon):
+        self._worker = worker
+        self._policy = policy
+        self._rollout_horizon = rollout_horizon
+
+    @property
+    def steps_trained(self):
+        return self._worker.total_steps
 
     def train(self):
-        batch = self._worker.rollout(self._rollout_length)
+        batch = self._worker.rollout(self._rollout_horizon)
         self._policy.learn_on_batch(batch)
+
+
+class A2CTrainer(PolicyOptimizationTrainer):
+    def __init__(self, env, config):
+        policy = A2CPolicy(env.observation_space, env.action_space, gradient_clip=config.get('gradient_clip', 5),
+                           device=config.get('device', 'cpu'))
+        worker = RolloutWorker(env, policy)
+        super().__init__(worker, policy, config['rollout_horizon'])
 
 
 class CommunicationTrainer:

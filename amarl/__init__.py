@@ -4,6 +4,6 @@ from amarl.main import cli
 name = "amarl"
 
 
-def run(trainable, num_episodes):
-    for _ in range(num_episodes):
+def run(trainable, num_steps):
+    while trainable.steps_trained < num_steps:
         trainable.train()

@@ -38,6 +38,11 @@ class RolloutWorker:
         self._env = env
         self._policy = policy
         self._last_obs = self._env.reset()
+        self._total_steps = 0
+
+    @property
+    def total_steps(self):
+        return self._total_steps
 
     def rollout(self, horizon):
         rollout = RolloutBatch()
@@ -53,6 +58,7 @@ class RolloutWorker:
 
             self._reset_terminated_envs(dones)
 
+        self._total_steps += horizon * len(self._env)
         rollout.set_element('last_obs', self._last_obs)
         return rollout
 

@@ -171,3 +171,13 @@ def test_worker_broadcasts_infos_as_message(workers, info_listener):
     with subscription_to(Message.TRAINING, info_listener):
         workers.rollout(5)
         assert info_listener.num_received_infos == 5
+
+
+def test_worker_total_steps_account_for_each_environment(workers_multi, env_multi):
+    workers_multi.rollout(5)
+    assert workers_multi.total_steps == 5 * len(env_multi)
+
+
+def test_worker_with_multiple_environments_performs(workers):
+    workers.rollout(5)
+    assert workers.total_steps == 5
