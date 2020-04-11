@@ -3,6 +3,7 @@ import pytest
 import numpy as np
 import torch
 
+from amarl.messenger import Message, subscription_to
 from amarl.policies import RandomPolicy
 from amarl.workers import RolloutWorker
 from amarl.wrappers import MultipleEnvs
@@ -65,6 +66,19 @@ def env_multi():
 @pytest.fixture
 def workers_multi(env_multi, policy):
     return RolloutWorker(env_multi, policy)
+
+
+@pytest.fixture
+def info_listener():
+    class _InfoListener:
+        def __init__(self):
+            self.num_received_infos = 0
+
+        def __call__(self, infos):
+            assert infos is not None
+            self.num_received_infos += 1
+
+    return _InfoListener()
 
 
 def test_workers_roll_out_provided_environment(workers):
@@ -151,3 +165,9 @@ def test_rollout_add_passes_on_additional_information_of_action_compute(workers,
 
 def assert_tensors_equal(actual, expected):
     np.testing.assert_array_equal(actual, expected)
+
+
+def test_worker_broadcasts_infos_as_message(workers, info_listener):
+    with subscription_to(Message.TRAINING, info_listener):
+        workers.rollout(5)
+        assert info_listener.num_received_infos == 5
