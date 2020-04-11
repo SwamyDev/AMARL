@@ -77,9 +77,6 @@ class TrainingMonitor:
         if self._logger:
             self._logger.info(message)
 
-    def _get_log_head(self):
-        return f"steps: {self._mum_calls},\t"
-
     def _print_wall_clock_performance(self):
         num_steps_elapsed = self._mum_calls - self._last_performance_logged
         if num_steps_elapsed >= self._performance_sample_size:
