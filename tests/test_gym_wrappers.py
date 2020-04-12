@@ -194,10 +194,12 @@ def test_gym_context_manager_cleans_up_environment_even_when_error_is_raised(rec
     assert recorded_close_calls[0] == env_spy
 
 
+@pytest.mark.rendered
 def test_rendered_cart_pole_observation_has_correct_observation_space(rendered_env):
     assert rendered_env.observation_space.shape == (3, 40, 40)
 
 
+@pytest.mark.rendered
 def test_rendered_cart_pole_observation_returns_render_image_as_observation(rendered_env):
     assert rendered_env.reset().shape == (3, 40, 40)
     assert unwrap_obs(rendered_env.step(0)).shape == (3, 40, 40)

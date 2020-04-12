@@ -41,4 +41,4 @@ env_test.done: env.done
 	touch env_test.done
 
 test: env_test.done
-	pytest --verbose --color=yes --cov=amarl --cov-report term-missing tests
+	pytest --verbose --color=yes --cov=amarl --cov-report term-missing tests $(if $(DISPLAY),--run-rendered,)
