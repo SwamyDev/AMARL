@@ -38,6 +38,7 @@ class RolloutWorker:
         self._env = env
         self._policy = policy
         self._last_obs = self._env.reset()
+        self._last_dones = [False] * len(self._env)
         self._total_steps = 0
 
     @property
@@ -46,23 +47,35 @@ class RolloutWorker:
 
     def rollout(self, horizon):
         rollout = RolloutBatch()
+        init_hidden = None
+        # self._last_dones[0] = False
+        # while not self._last_dones[0]:
         for _ in range(horizon):
-            actions, additional = self._policy.compute_actions(self._last_obs)
-            obs, rewards, dones, infos = self._env.step(actions.cpu().numpy())
+            actions, additional = self._policy.compute_actions(self._last_obs, self._last_dones)
+            if init_hidden is None:
+                init_hidden = additional.get('prv_hidden', None)
+
+            obs, rewards, self._last_dones, infos = self._env.step(actions.cpu().numpy())
             broadcast(Message.TRAINING, infos=infos)
             self._last_obs = obs
 
-            elements = dict(actions=actions, rewards=rewards, dones=dones, infos=infos)
+            elements = dict(actions=actions, rewards=rewards, dones=self._last_dones, infos=infos)
             elements.update(additional or {})
             rollout.append(elements)
 
-            self._reset_terminated_envs(dones)
+            self._reset_terminated_envs(self._last_dones)
+            self._total_steps += len(self._env)
 
-        self._total_steps += horizon * len(self._env)
+            if self._last_dones[0]:
+                break
+
         rollout.set_element('last_obs', self._last_obs)
+        rollout.set_element('initial_hidden', init_hidden)
         return rollout
 
     def _reset_terminated_envs(self, dones):
         if any(dones):
-            for done_idx in np.where(dones)[0]:
-                self._env.envs[done_idx].reset()
+            idx_dones = [i for i in np.where(dones)[0]]
+            for i in idx_dones:
+                self._last_obs[i] = self._env.envs[i].reset()
+            broadcast(Message.ENV_TERMINATED, idx_dones=idx_dones)

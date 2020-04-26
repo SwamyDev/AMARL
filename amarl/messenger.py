@@ -5,7 +5,8 @@ from amarl.metrics import PerformanceMeasure
 
 class Message:
     TRAINING = 0
-    NUM_MESSAGES = 1
+    ENV_TERMINATED = 1
+    NUM_MESSAGES = 2
 
 
 class _Messenger:
@@ -24,6 +25,14 @@ class _Messenger:
 
 
 _messenger = _Messenger()
+
+
+def subscribe_to(message, listener):
+    _messenger.subscribe_to(message, listener)
+
+
+def unsubscribe_from(message, listener):
+    _messenger.unsubscribe_from(message, listener)
 
 
 @contextmanager

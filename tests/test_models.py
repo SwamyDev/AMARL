@@ -1,10 +1,10 @@
 import torch
 
-from amarl.models import CommunicationNet, A2CNet, A2CLinearNet
+from amarl.models import CommunicationNet, A2CNet, A2CLinearNet, A2CSocialInfluenceNet
 
 
 def test_communication_net_infers_all_parameters_correctly():
-    model = CommunicationNet(view_dims=(15, 15), num_actions=8, num_agents=5, vocabulary_size=7, com_embedding=16)
+    model = CommunicationNet(view_dims=(3, 15, 15), num_actions=8, num_agents=5, vocabulary_size=7, com_embedding=16)
     observations = torch.randn(4, 3, 15, 15)
     messages = torch.randn(4, 4 * 7)
 
@@ -30,3 +30,15 @@ def test_a2c_linear_net_infers_all_parameters_correctly():
     action_dists, action_values = model(observations)
 
     assert action_dists.param_shape == (4, 2) and action_values.shape == (4, 1)
+
+
+def test_a2c_social_influence_infers_all_parameters_correctly():
+    model = A2CSocialInfluenceNet(view_dims=(3, 84, 84), num_actions=2)
+    observations = torch.randn(16, 3, 84, 84)
+    hidden = model.get_initial_state()
+
+    action_dists, action_values, hidden = model(observations, hidden)
+
+    assert action_dists.param_shape == (16, 2) and action_values.shape == (16, 1)
+    hx, cx = hidden
+    assert hx.shape == (16, 128) and cx.shape == (16, 128)

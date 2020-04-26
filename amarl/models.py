@@ -16,10 +16,10 @@ class CommunicationNet(nn.Module):
         self._num_agents = num_agents
         self._vocabulary_size = vocabulary_size
 
-        self.cv1 = nn.Conv2d(3, 6, kernel_size=3, stride=1)
+        self.cv1 = nn.Conv2d(view_dims[0], 6, kernel_size=3, stride=1)
 
-        w = cv2d_size_out(view_dims[0], 3, 1)
-        h = cv2d_size_out(view_dims[1], 3, 1)
+        w = cv2d_size_out(view_dims[1], 3, 1)
+        h = cv2d_size_out(view_dims[2], 3, 1)
         self.fc1 = nn.Linear(w * h * 6, 32)
         self.fc2 = nn.Linear(32, 32)
 
@@ -66,6 +66,62 @@ def layer_init(layer, w_scale=1.0):
     return layer
 
 
+class A2CSocialInfluenceNet(nn.Module):
+    def __init__(self, view_dims, num_actions):
+        super().__init__()
+        self._num_actions = num_actions
+
+        self.cv1 = nn.Conv2d(view_dims[0], 32, 5, stride=1, padding=2)
+        self.mp1 = nn.MaxPool2d(2, 2)
+        self.cv2 = nn.Conv2d(32, 32, 5, stride=1, padding=1)
+        self.mp2 = nn.MaxPool2d(2, 2)
+        self.cv3 = nn.Conv2d(32, 64, 4, stride=1, padding=1)
+        self.mp3 = nn.MaxPool2d(2, 2)
+        self.cv4 = nn.Conv2d(64, 64, 3, stride=1, padding=1)
+        self.mp4 = nn.MaxPool2d(2, 2)
+
+        self.lstm = nn.LSTMCell(1024, 512)
+        self.hidden_x = None
+        self.hidden_c = None
+
+        self.action_pi = nn.Linear(512, num_actions)
+        self.action_v = nn.Linear(512, 1)
+
+        self.train()
+
+    def get_initial_state(self):
+        h = (
+            torch.autograd.Variable(torch.zeros(5, 512)).float().to(self.cv1.weight.device),
+            torch.autograd.Variable(torch.zeros(5, 512)).float().to(self.cv1.weight.device)
+        )
+        return h
+
+    def forward(self, obs, dones):
+        obs = F.relu(self.mp1(self.cv1(obs)))
+        obs = F.relu(self.mp2(self.cv2(obs)))
+        obs = F.relu(self.mp3(self.cv3(obs)))
+        obs = F.relu(self.mp4(self.cv4(obs)))
+        obs = obs.view(obs.size(0), -1)
+
+        if self.hidden_x is None:
+            self.hidden_x, self.hidden_c = self.get_initial_state()
+
+        mask = (1 - dones).unsqueeze(1)
+        self.hidden_x = mask * self.hidden_x
+        self.hidden_c = mask * self.hidden_c
+        lstm_in = obs
+        lstm_out, c = self.lstm(lstm_in, (self.hidden_x, self.hidden_c))
+        self.hidden_x = lstm_out
+        self.hidden_c = c
+        x = lstm_out
+
+        logits = self.action_pi(x)
+        dists = Categorical(logits=logits)
+        vs = self.action_v(x)
+
+        return dists, vs
+
+
 class A2CNet(nn.Module):
     def __init__(self, view_dims, num_actions):
         super().__init__()
@@ -91,6 +147,58 @@ class A2CNet(nn.Module):
         dists = Categorical(logits=logits)
         vs = self.v(obs)
         return dists, vs
+
+
+class A2CLinearLSTMNet(nn.Module):
+    def __init__(self, observation_size, num_actions):
+        super().__init__()
+        self.fc1 = nn.Linear(observation_size, 64)
+
+        # self.fc2 = nn.Linear(64, 64)
+        self.lstm = nn.LSTMCell(64, 64)
+
+        self.hidden_x = None
+        self.hidden_c = None
+
+        self.pi = nn.Linear(64, num_actions)
+        self.v = nn.Linear(64, 1)
+
+    def get_initial_state(self):
+        h = (
+            torch.autograd.Variable(torch.zeros(1, 64)).float().to(self.fc1.weight.device),
+            torch.autograd.Variable(torch.zeros(1, 64)).float().to(self.fc1.weight.device)
+        )
+        return h
+
+    def reset_hidden(self):
+        self.hidden_x, self.hidden_c = self.get_initial_state()
+
+    def forward(self, obs, dones):
+        obs = F.relu(self.fc1(obs))
+
+        # if self.hidden_x is None:
+        #     self.hidden_x, self.hidden_c = self.get_initial_state()
+
+        x, prv_hidden = self._recurse(dones, obs)
+        # x, prv_hidden = F.relu(self.fc2(obs)), (self.hidden_x, self.hidden_c)
+
+        logits = self.pi(x)
+        dists = Categorical(logits=logits)
+        vs = self.v(x)
+        return dists, vs, prv_hidden
+
+    def _recurse(self, dones, obs):
+        # mask = (1 - dones).unsqueeze(1)
+        # self.hidden_x = mask * self.hidden_x
+        # self.hidden_c = mask * self.hidden_c
+        lstm_in = obs
+        lstm_out, c = self.lstm(lstm_in, (self.hidden_x, self.hidden_c))
+        prv_x = self.hidden_x
+        prv_c = self.hidden_c
+        self.hidden_x = lstm_out
+        self.hidden_c = c
+        x = lstm_out
+        return x, (prv_x, prv_c)
 
 
 class A2CLinearNet(nn.Module):
