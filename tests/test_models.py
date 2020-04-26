@@ -1,6 +1,6 @@
 import torch
 
-from amarl.models import CommunicationNet, A2CNet, A2CLinearNet
+from amarl.models import CommunicationNet, A2CNet, A2CLinearNet, A2CSocialInfluenceNet, A2CLinearLSTMNet
 
 
 def test_communication_net_infers_all_parameters_correctly():
@@ -30,3 +30,28 @@ def test_a2c_linear_net_infers_all_parameters_correctly():
     action_dists, action_values = model(observations)
 
     assert action_dists.param_shape == (4, 2) and action_values.shape == (4, 1)
+
+
+def test_a2c_social_influence_infers_all_parameters_correctly():
+    model = A2CSocialInfluenceNet(view_dims=(3, 84, 84), num_actions=2)
+    observations = torch.randn(1, 3, 84, 84)
+    hidden = model.get_initial_state()
+
+    action_dists, action_values, hidden = model(observations, hidden)
+
+    assert action_dists.param_shape == (1, 2) and action_values.shape == (1, 1)
+    hx, cx = hidden
+    assert hx.shape == (1, 512) and cx.shape == (1, 512)
+
+
+def test_a2c_lstm_linear_infers_all_parameters_correctly():
+    model = A2CLinearLSTMNet(observation_size=8, num_actions=2)
+    observations = torch.randn(1, 8)
+    hidden = model.get_initial_state()
+
+    action_dists, action_values, hidden = model(observations, hidden)
+
+    assert action_dists.param_shape == (1, 2) and action_values.shape == (1, 1)
+    hx, cx = hidden
+    assert hx.shape == (1, 64) and cx.shape == (1, 64)
+
