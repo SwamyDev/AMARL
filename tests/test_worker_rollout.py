@@ -26,10 +26,12 @@ class PolicySpy(PolicyStub):
     def __init__(self, action_space):
         super().__init__(action_space)
         self.recorded_actions = list()
+        self.received_observations = None
 
     def compute_actions(self, observations):
         a, info = super().compute_actions(observations)
         self.recorded_actions.append(a)
+        self.received_observations = observations
         return a, info
 
 
@@ -37,10 +39,12 @@ class EnvSpyWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
         self.received_resets = 0
+        self.last_init_observation = None
 
     def reset(self, **kwargs):
         self.received_resets += 1
-        return super().reset(**kwargs)
+        self.last_init_observation = super().reset(**kwargs)
+        return self.last_init_observation
 
 
 @pytest.fixture
@@ -155,6 +159,17 @@ def test_rollout_selectively_only_resets_terminated_environment_in_multi_env_set
 
     resets = [env.received_resets for env in env_multi.envs]
     assert any([r != resets[0] for r in resets])
+
+
+def test_rollout_selectively_sets_init_observation_in_multi_env_settings_after_reset(workers_multi, env_multi, policy):
+    rollout = workers_multi.rollout(1)
+    while not any(get_dones(rollout)[0]):
+        rollout = workers_multi.rollout(1)
+
+    reset_envs = [(i, e) for i, e in enumerate(env_multi.envs) if e.received_resets == 2]
+    workers_multi.rollout(1)
+    for idx, env in reset_envs:
+        assert_tensors_equal(policy.received_observations[idx], env.last_init_observation.astype(np.float32))
 
 
 def test_rollout_add_passes_on_additional_information_of_action_compute(workers, env, policy):

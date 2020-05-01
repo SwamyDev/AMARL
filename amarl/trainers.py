@@ -19,9 +19,17 @@ class PolicyOptimizationTrainer:
 
 class A2CTrainer(PolicyOptimizationTrainer):
     def __init__(self, env, config):
-        policy = A2CPolicy(env.observation_space, env.action_space, gradient_clip=config.get('gradient_clip', 5),
-                           device=config.get('device', 'cpu'))
+        policy = A2CPolicy(env.observation_space, env.action_space, optimizer=config.get('optimizer'),
+                           gradient_clip=config.get('gradient_clip', 5), device=config.get('device', 'cpu'))
         worker = RolloutWorker(env, policy)
+        super().__init__(worker, policy, config['rollout_horizon'])
+
+
+class A2CLSTMTrainer(PolicyOptimizationTrainer):
+    def __init__(self, env, config):
+        policy = A2CLSTMPolicy(env.observation_space, env.action_space, optimizer=config.get('optimizer'),
+                               gradient_clip=config.get('gradient_clip', 5), device=config.get('device', 'cpu'))
+        worker = RolloutWorker(env, policy, stop_on_done=True)
         super().__init__(worker, policy, config['rollout_horizon'])
 
 

@@ -4,7 +4,7 @@ from gym.spaces import Box, Discrete
 
 
 class MemoryEnv(gym.Env):
-    def __init__(self, episode_length=3):
+    def  __init__(self, episode_length=3):
         self.observation_space = Box(0, 1, shape=(8,), dtype=np.float32)
         self.action_space = Discrete(2)
         self.episode_length = episode_length

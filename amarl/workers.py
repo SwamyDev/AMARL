@@ -69,5 +69,5 @@ class RolloutWorker:
     def _reset_terminated_envs(self, dones):
         index_dones = np.where(dones)[0]
         for idx_done in index_dones:
-            self._env.envs[idx_done].reset()
+            self._last_obs[idx_done] = self._env.envs[idx_done].reset()
         broadcast(Message.ENV_TERMINATED, index_dones=index_dones)

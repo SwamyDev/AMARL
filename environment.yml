@@ -10,3 +10,4 @@ dependencies:
   - pip:
       - click
       - pyglet<=1.3.2
+      - plotly
