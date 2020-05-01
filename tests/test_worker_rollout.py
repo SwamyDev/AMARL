@@ -73,10 +73,12 @@ def info_listener():
     class _InfoListener:
         def __init__(self):
             self.num_received_infos = 0
+            self.last_received_message = None
 
-        def __call__(self, infos):
+        def __call__(self, **infos):
             assert infos is not None
             self.num_received_infos += 1
+            self.last_received_message = infos
 
     return _InfoListener()
 
@@ -181,3 +183,34 @@ def test_worker_total_steps_account_for_each_environment(workers_multi, env_mult
 def test_worker_with_multiple_environments_performs(workers):
     workers.rollout(5)
     assert workers.total_steps == 5
+
+
+def test_worker_sends_terminated_message_when_done(workers_multi, info_listener):
+    with subscription_to(Message.ENV_TERMINATED, info_listener):
+        rollout = workers_multi.rollout(1)
+        dones = get_dones(rollout)[0]
+        while not any(dones):
+            rollout = workers_multi.rollout(1)
+            dones = get_dones(rollout)[0]
+        idx_dones = get_idx_done(dones)
+        assert_indices_equal(info_listener.last_received_message['index_dones'], idx_dones)
+
+
+def get_idx_done(dones):
+    return [i for i in np.where(dones)[0]]
+
+
+def assert_indices_equal(actual, expected):
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_worker_stop_rollout_when_environment_has_terminated_if_configured_to_do_so(env, policy):
+    stopping_worker = RolloutWorker(env, policy, stop_on_done=True)
+
+    rollout = stopping_worker.rollout(5)
+    steps = len(rollout)
+    while len(rollout) == 5:
+        rollout = stopping_worker.rollout(5)
+        steps += len(rollout)
+
+    assert stopping_worker.total_steps == steps

@@ -5,7 +5,8 @@ from amarl.metrics import PerformanceMeasure
 
 class Message:
     TRAINING = 0
-    NUM_MESSAGES = 1
+    ENV_TERMINATED = 1
+    NUM_MESSAGES = 2
 
 
 class _Messenger:
@@ -33,6 +34,23 @@ def subscription_to(message, listener):
         yield
     finally:
         _messenger.unsubscribe_from(message, listener)
+
+
+class ListeningMixin:
+    def __init__(self):
+        self._subscriptions = []
+
+    def subscribe_to(self, message, listener):
+        self._subscriptions.append((message, listener))
+        _messenger.subscribe_to(message, listener)
+
+    def close(self):
+        for m, l in self._subscriptions:
+            _messenger.unsubscribe_from(m, l)
+        self._subscriptions.clear()
+
+    def __del__(self):
+        self.close()
 
 
 class TrainingMonitor:

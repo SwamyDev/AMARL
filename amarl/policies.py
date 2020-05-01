@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from amarl.messenger import ListeningMixin, Message
 from amarl.models import A2CNet, A2CLinearNet, A2CLinearLSTMNet
 
 
@@ -20,7 +21,7 @@ class RandomPolicy(Policy):
     def __init__(self, action_space):
         self._action_space = action_space
 
-    def compute_actions(self, observations, dones=None):
+    def compute_actions(self, observations):
         return np.array([self._action_space.sample() for _ in range(len(observations))]), None
 
     def learn_on_batch(self, batch):
@@ -30,6 +31,7 @@ class RandomPolicy(Policy):
 class ActorCriticPolicy(Policy, abc.ABC):
     def __init__(self, model, optimizer, gamma, entropy_loss_weight, value_loss_weight,
                  gradient_clip, device='cpu'):
+        super().__init__()
         self._gamma = gamma
         self._entropy_loss_weight = entropy_loss_weight
         self._value_loss_weight = value_loss_weight
@@ -93,7 +95,7 @@ class A2CPolicy(ActorCriticPolicy):
         super().__init__(A2CNet(observation_space.shape, action_space.n), optimizer, gamma, entropy_loss_weight,
                          value_loss_weight, gradient_clip, device)
 
-    def compute_actions(self, observations, dones=None):
+    def compute_actions(self, observations):
         acts_dist, vs = self._model(torch.from_numpy(observations).to(self._device))
         a = acts_dist.sample()
         return a, {'vs': vs.squeeze(dim=1), 'act_dists': acts_dist}
@@ -104,18 +106,22 @@ class A2CPolicy(ActorCriticPolicy):
         self._train_actor_critic_on(rollout, next_return)
 
 
-class A2CLSTMPolicy(ActorCriticPolicy):
+class A2CLSTMPolicy(ActorCriticPolicy, ListeningMixin):
     def __init__(self, observation_space, action_space, optimizer=None, gamma=0.99, entropy_loss_weight=0.01,
                  value_loss_weight=0.5, gradient_clip=30, device='cpu'):
         super().__init__(A2CLinearLSTMNet(observation_space.shape[0], action_space.n), optimizer, gamma,
                          entropy_loss_weight, value_loss_weight, gradient_clip, device)
         self._hidden = self._model.get_initial_state()
         self._pending_reset = False
+        self.subscribe_to(Message.ENV_TERMINATED, self._on_environment_terminated)
 
-    def compute_actions(self, observations, dones=None):
+    def _on_environment_terminated(self, **_info):
+        self._pending_reset = True
+
+    def compute_actions(self, observations):
         if self._pending_reset:
             self._hidden = self._model.get_initial_state()
-        self._pending_reset = dones[0]
+            self._pending_reset = False
 
         acts_dist, vs, self._hidden = self._model(torch.from_numpy(observations).to(self._device), self._hidden)
         a = acts_dist.sample()

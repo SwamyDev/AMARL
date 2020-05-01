@@ -34,9 +34,10 @@ class RolloutBatch:
 
 
 class RolloutWorker:
-    def __init__(self, env, policy):
+    def __init__(self, env, policy, stop_on_done=False):
         self._env = env
         self._policy = policy
+        self._stop_on_done = stop_on_done
         self._last_obs = self._env.reset()
         self._total_steps = 0
 
@@ -56,13 +57,17 @@ class RolloutWorker:
             elements.update(additional or {})
             rollout.append(elements)
 
-            self._reset_terminated_envs(dones)
+            self._total_steps += len(self._env)
+            if any(dones):
+                self._reset_terminated_envs(dones)
+                if self._stop_on_done:
+                    break
 
-        self._total_steps += horizon * len(self._env)
         rollout.set_element('last_obs', self._last_obs)
         return rollout
 
     def _reset_terminated_envs(self, dones):
-        if any(dones):
-            for done_idx in np.where(dones)[0]:
-                self._env.envs[done_idx].reset()
+        index_dones = np.where(dones)[0]
+        for idx_done in index_dones:
+            self._env.envs[idx_done].reset()
+        broadcast(Message.ENV_TERMINATED, index_dones=index_dones)

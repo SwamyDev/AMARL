@@ -5,6 +5,7 @@ import pytest
 import torch
 from gym.spaces import Box, Discrete
 
+from amarl.messenger import broadcast, Message
 from amarl.policies import A2CPolicy, A2CLSTMPolicy
 from amarl.workers import RolloutBatch
 
@@ -159,20 +160,27 @@ def assert_is_roughly_uniform(dist):
 def get_last_action_dist(policy, obs, rollout):
     dist = None
     for i in range(rollout):
+        dist = get_action_probabilities(*policy.compute_actions(obs))
         done = i == rollout - 1
-        dist = get_action_probabilities(*policy.compute_actions(obs, [done]))
+        if done:
+            send_done_message()
     return dist
+
+
+def send_done_message():
+    broadcast(Message.ENV_TERMINATED, index_dones=np.array([0]))
 
 
 def make_last_action_reward_conditioned_on_first_obs_rollout(policy, first_obs, rewarded_action, rollout_len):
     rollout = RolloutBatch()
     for i in range(rollout_len):
-        obs = first_obs if i == 0 else np.zeros_like(first_obs)
+        obs = first_obs if i == 0 else np.random.rand(*first_obs.shape).astype(np.float32)
         done = [i == rollout_len - 1]
-        acts, additional = policy.compute_actions(obs, done)
+        acts, additional = policy.compute_actions(obs)
         reward = 0.0
         if done[0]:
             reward = 1.0 if acts[0] == rewarded_action else -1.0
+            send_done_message()
         elements = dict(actions=acts, rewards=np.array([reward]), dones=np.array(done))
         elements.update(additional)
         rollout.append(elements)
