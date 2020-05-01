@@ -75,7 +75,10 @@ def test_training_monitor_prints_wall_clock_performance_in_specified_interval(ca
                 time.sleep(0.2)
                 broadcast(Message.TRAINING, infos=[{'episodic_return': -0.5}])
 
-    assert caplog.messages == [m.PERFORMANCE_LINE_FORMAT.format(steps=2, performance=2 / measure.elapsed)]
+    eps = 1e-5
+    assert caplog.messages == [m.PERFORMANCE_LINE_FORMAT.format(steps=2, performance=2 / measure.elapsed)] or \
+           caplog.messages == [m.PERFORMANCE_LINE_FORMAT.format(steps=2, performance=2 / (measure.elapsed + eps))] or \
+           caplog.messages == [m.PERFORMANCE_LINE_FORMAT.format(steps=2, performance=2 / measure.elapsed - eps)]
 
 
 def test_training_monitor_prints_multiple_wall_clock_performance_measures(caplog):

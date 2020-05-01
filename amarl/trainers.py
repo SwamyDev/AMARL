@@ -1,4 +1,4 @@
-from amarl.policies import CommunicationPolicy, A2CPolicy
+from amarl.policies import CommunicationPolicy, A2CPolicy, A2CLSTMPolicy
 from amarl.workers import RolloutWorker
 
 
