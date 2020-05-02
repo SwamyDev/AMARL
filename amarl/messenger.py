@@ -53,11 +53,12 @@ class ListeningMixin:
         self.close()
 
 
-class TrainingMonitor:
+class TrainingMonitor(ListeningMixin):
     TRAINING_LINE_FORMAT = "steps: {steps:>7}, average reward:\t{avg_reward:+.2f}"
     PERFORMANCE_LINE_FORMAT = "steps: {steps:>7}, performance:\t{performance:.2f} steps/s"
 
     def __init__(self, logger, progress_averaging, performance_sample_size):
+        super().__init__()
         self._logger = logger
         self._progress_avg = progress_averaging
         self._performance_sample_size = performance_sample_size
@@ -69,7 +70,7 @@ class TrainingMonitor:
         self._perf_measure.start()
         self._last_performance_logged = 0
 
-        _messenger.subscribe_to(Message.TRAINING, self)
+        self.subscribe_to(Message.TRAINING, self)
 
     @property
     def captured_returns(self):
@@ -103,9 +104,6 @@ class TrainingMonitor:
             self._log(self.PERFORMANCE_LINE_FORMAT.format(steps=self._mum_calls, performance=steps_per_sec))
             self._last_performance_logged = self._mum_calls
             self._perf_measure.start()
-
-    def close(self):
-        _messenger.unsubscribe_from(Message.TRAINING, self)
 
 
 @contextmanager
