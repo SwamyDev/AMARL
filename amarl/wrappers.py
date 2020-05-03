@@ -12,6 +12,9 @@ from amarl.processing import get_cart_pos_normalized, proc_screen
 
 
 class MultipleEnvs(gym.Env):
+    class TerminatedEnvironmentError(gym.error.Error):
+        pass
+
     def __init__(self, env_factory, num_envs):
         self._num_envs = num_envs
         self._envs = [env_factory() for _ in range(self._num_envs)]
@@ -22,24 +25,38 @@ class MultipleEnvs(gym.Env):
         self.action_space = self._envs[0].action_space
         self.reward_range = self._envs[0].reward_range
         self.metadata = self._envs[0].metadata
+        self._terminated_envs = set()
 
     @property
     def envs(self):
         return self._envs
 
-    def step(self, action: np.array):
-        obs = np.empty((len(self), *self.observation_space.shape), dtype=self.observation_space.dtype)
-        rewards = np.empty((len(self),), dtype=np.float)
-        dones = np.empty((len(self),), dtype=np.bool)
-        infos = np.empty((len(self),), dtype=np.object)
-        for idx in range(len(self)):
+    def step(self, action):
+        is_selective = type(action) is dict
+        dones, infos, obs, rewards = self._make_return_objects(is_selective)
+        rank_ids = action if is_selective else range(len(self))
+        for idx in rank_ids:
+            if idx in self.terminated_env_ids:
+                raise self.TerminatedEnvironmentError(f"Passing an action to terminated environment: {idx}")
             o, r, d, i = self._envs[idx].step(action[idx])
             obs[idx] = o
             rewards[idx] = r
             dones[idx] = d
             infos[idx] = i
+            if d:
+                self._terminated_envs.add(idx)
 
         return obs, rewards, dones, infos
+
+    def _make_return_objects(self, is_selective):
+        if is_selective:
+            obs, rewards, dones, infos = dict(), dict(), dict(), dict()
+        else:
+            obs = np.empty((len(self), *self.observation_space.shape), dtype=self.observation_space.dtype)
+            rewards = np.empty((len(self),), dtype=np.float)
+            dones = np.empty((len(self),), dtype=np.bool)
+            infos = np.empty((len(self),), dtype=np.object)
+        return dones, infos, obs, rewards
 
     def reset(self):
         obs = np.empty((len(self), *self.observation_space.shape), dtype=self.observation_space.dtype)
@@ -59,6 +76,14 @@ class MultipleEnvs(gym.Env):
             env.close()
 
         super().close()
+
+    @property
+    def terminated_env_ids(self):
+        return self._terminated_envs
+
+    @property
+    def num_active_envs(self):
+        return len(self) - len(self.terminated_env_ids)
 
     def __len__(self):
         return self._num_envs

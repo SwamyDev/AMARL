@@ -25,8 +25,9 @@ class EnvStub(gym.Env):
         def decrement_lives(self):
             self._lives -= 1
 
-    def __init__(self):
-        self.observation_space = Box(0, 1, shape=(1, 8))
+    def __init__(self, obs_space, default_obs):
+        self.observation_space = obs_space
+        self._default_obs = default_obs
         self.np_random = np.random.RandomState()
         self.ale = self.ALEStub()
         self._return_obs = None
@@ -74,8 +75,8 @@ class EnvStub(gym.Env):
 
 
 class EnvSpy(EnvStub):
-    def __init__(self, recorded_close_calls, recorded_render_calls):
-        super().__init__()
+    def __init__(self, obs_space, default_obs, recorded_close_calls, recorded_render_calls):
+        super().__init__(obs_space, default_obs)
         self._recorded_close_calls = recorded_close_calls
         self._recorded_render_calls = recorded_render_calls
         self.num_noop_actions_received = 0
@@ -103,6 +104,16 @@ class EnvSpy(EnvStub):
 
 
 @pytest.fixture
+def obs_space():
+    return Box(0, 1, shape=(1, 8), dtype=np.float32)
+
+
+@pytest.fixture
+def default_obs(obs_space):
+    return np.zeros(obs_space.shape)
+
+
+@pytest.fixture
 def recorded_close_calls():
     return list()
 
@@ -113,13 +124,13 @@ def recorded_render_calls():
 
 
 @pytest.fixture
-def env_spy(recorded_close_calls, recorded_render_calls):
-    return EnvSpy(recorded_close_calls, recorded_render_calls)
+def env_spy(obs_space, default_obs, recorded_close_calls, recorded_render_calls):
+    return EnvSpy(obs_space, default_obs, recorded_close_calls, recorded_render_calls)
 
 
 @pytest.fixture
-def multiple_envs(recorded_close_calls, recorded_render_calls):
-    return MultipleEnvs(lambda: EnvSpy(recorded_close_calls, recorded_render_calls), 5)
+def multiple_envs(obs_space, default_obs, recorded_close_calls, recorded_render_calls):
+    return MultipleEnvs(lambda: EnvSpy(obs_space, default_obs, recorded_close_calls, recorded_render_calls), 5)
 
 
 @pytest.fixture
@@ -180,6 +191,57 @@ def test_multiple_envs_wrapper_closes_all_created_envs(recorded_close_calls, mul
 def test_multiple_envs_wrapper_passes_on_render_call(recorded_render_calls, multiple_envs):
     multiple_envs.render()
     assert len(recorded_render_calls) == 5
+
+
+def test_multiple_envs_provides_number_of_active_envs_and_indices_of_terminated_envs(multiple_envs):
+    multiple_envs.reset()
+    assert multiple_envs.num_active_envs == 5
+    multiple_envs.envs[2].set_is_done_at_step(1)
+    multiple_envs.step({0: 0, 1: 0, 2: 0, 3: 0, 4: 0})
+    assert multiple_envs.num_active_envs == 4
+    assert multiple_envs.terminated_env_ids == {2}
+
+
+def test_multiple_envs_pass_on_actions_selectively_when_actions_are_passed_as_dicts(multiple_envs):
+    multiple_envs.reset()
+    multiple_envs.step({0: 1, 2: 0, 3: 1})
+    assert multiple_envs.envs[0].actions_received == [1]
+    assert multiple_envs.envs[1].actions_received == []
+    assert multiple_envs.envs[2].actions_received == [0]
+    assert multiple_envs.envs[3].actions_received == [1]
+    assert multiple_envs.envs[4].actions_received == []
+
+
+def test_multiple_envs_raise_assertion_error_when_trying_to_set_an_action_for_a_terminated_env(multiple_envs):
+    multiple_envs.reset()
+    multiple_envs.envs[2].set_is_done_at_step(1)
+    multiple_envs.step({2: 0})
+    with pytest.raises(MultipleEnvs.TerminatedEnvironmentError):
+        multiple_envs.step({2: 0})
+
+
+def test_multiple_envs_return_data_selectively_if_selective_actions_are_passed_as_dicts(multiple_envs, default_obs):
+    multiple_envs.reset()
+    multiple_envs.envs[2].set_is_done_at_step(1)
+
+    obs, rs, dones, infos = multiple_envs.step({0: 0, 1: 0, 2: 0, 3: 0, 4: 0})
+    assert_selective_obs_eq(obs, {0: default_obs, 1: default_obs, 2: default_obs, 3: default_obs, 4: default_obs})
+    assert rs == {0: 1, 1: 1, 2: 1, 3: 1, 4: 1}
+    assert dones == {0: False, 1: False, 2: True, 3: False, 4: False}
+    assert infos == {0: {'info': "dummy"}, 1: {'info': "dummy"}, 2: {'info': "dummy"}, 3: {'info': "dummy"},
+                     4: {'info': "dummy"}}
+
+    obs, rs, dones, infos = multiple_envs.step({1: 0, 4: 0})
+    assert_selective_obs_eq(obs, {1: default_obs, 4: default_obs})
+    assert rs == {1: 1, 4: 1}
+    assert dones == {1: False, 4: False}
+    assert infos == {1: {'info': "dummy"}, 4: {'info': "dummy"}}
+
+
+def assert_selective_obs_eq(actual, expected):
+    assert set(actual.keys()) == set(expected.keys())
+    for k in actual:
+        assert_obs_eq(actual[k], expected[k])
 
 
 def test_gym_context_manager_cleans_up_environment_even_when_error_is_raised(recorded_close_calls, env_spy):
