@@ -15,8 +15,9 @@ class MultipleEnvs(gym.Env):
     class TerminatedEnvironmentError(gym.error.Error):
         pass
 
-    def __init__(self, env_factory, num_envs):
+    def __init__(self, env_factory, num_envs, is_selective=False):
         self._num_envs = num_envs
+        self._is_selective = is_selective
         self._envs = [env_factory() for _ in range(self._num_envs)]
         seed = np.random.randint(int(1e9))
         for i, e in enumerate(self._envs):
@@ -32,9 +33,8 @@ class MultipleEnvs(gym.Env):
         return self._envs
 
     def step(self, action):
-        is_selective = type(action) is dict
-        dones, infos, obs, rewards = self._make_return_objects(is_selective)
-        rank_ids = action if is_selective else range(len(self))
+        dones, infos, obs, rewards = self._make_return_objects()
+        rank_ids = action if self._is_selective else range(len(self))
         for idx in rank_ids:
             if idx in self.terminated_env_ids:
                 raise self.TerminatedEnvironmentError(f"Passing an action to terminated environment: {idx}")
@@ -48,8 +48,8 @@ class MultipleEnvs(gym.Env):
 
         return obs, rewards, dones, infos
 
-    def _make_return_objects(self, is_selective):
-        if is_selective:
+    def _make_return_objects(self):
+        if self._is_selective:
             obs, rewards, dones, infos = dict(), dict(), dict(), dict()
         else:
             obs = np.empty((len(self), *self.observation_space.shape), dtype=self.observation_space.dtype)
@@ -59,11 +59,19 @@ class MultipleEnvs(gym.Env):
         return dones, infos, obs, rewards
 
     def reset(self):
-        obs = np.empty((len(self), *self.observation_space.shape), dtype=self.observation_space.dtype)
-        for i in range(len(self)):
-            obs[i] = self._envs[i].reset()
+        if self._is_selective:
+            obs = dict()
+        else:
+            obs = np.empty((len(self), *self.observation_space.shape), dtype=self.observation_space.dtype)
 
+        for i in range(len(self)):
+            obs[i] = self.reset_env(i)
         return obs
+
+    def reset_env(self, rank):
+        if rank in self._terminated_envs:
+            self._terminated_envs.remove(rank)
+        return self._envs[rank].reset()
 
     def render(self, mode='human'):
         res = list()
