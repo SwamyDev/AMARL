@@ -220,7 +220,7 @@ def assert_indices_equal(actual, expected):
 
 
 def test_worker_stop_rollout_when_environment_has_terminated_if_configured_to_do_so(env, policy):
-    stopping_worker = RolloutWorker(env, policy, stop_on_done=True)
+    stopping_worker = RolloutWorker(env, policy, regularized=False)
 
     rollout = stopping_worker.rollout(5)
     steps = len(rollout)

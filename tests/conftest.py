@@ -1,5 +1,8 @@
 import pytest
 
+from amarl.wrappers import MultipleEnvs
+from tests.doubles.envs import EnvSpy
+
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -21,3 +24,19 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "rendered" in item.keywords:
             item.add_marker(skip_rendered)
+
+
+@pytest.fixture
+def recorded_close_calls():
+    return list()
+
+
+@pytest.fixture
+def recorded_render_calls():
+    return list()
+
+
+@pytest.fixture
+def multiple_envs_selective(obs_space, default_obs, recorded_close_calls, recorded_render_calls):
+    return MultipleEnvs(lambda: EnvSpy(obs_space, default_obs, recorded_close_calls, recorded_render_calls), 5,
+                        is_selective=True)

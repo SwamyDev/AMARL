@@ -34,10 +34,10 @@ class RolloutBatch:
 
 
 class RolloutWorker:
-    def __init__(self, env, policy, stop_on_done=False):
+    def __init__(self, env, policy, regularized=True):
         self._env = env
         self._policy = policy
-        self._stop_on_done = stop_on_done
+        self._regularized = regularized
         self._last_obs = self._env.reset()
         self._total_steps = 0
 
@@ -60,7 +60,7 @@ class RolloutWorker:
             self._total_steps += len(self._env)
             if any(dones):
                 self._reset_terminated_envs(dones)
-                if self._stop_on_done:
+                if not self._regularized:
                     break
 
         rollout.set_element('last_obs', self._last_obs)
