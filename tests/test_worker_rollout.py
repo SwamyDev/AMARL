@@ -12,14 +12,18 @@ from amarl.wrappers import MultipleEnvs
 class PolicyStub(RandomPolicy):
     def __init__(self, action_space):
         super().__init__(action_space)
-        self._info_dict = None
+        self._info_dict = {}
 
     def set_additional_information(self, info_dict):
         self._info_dict = info_dict
 
     def compute_actions(self, observations):
         acts, _ = super().compute_actions(observations)
-        return torch.from_numpy(acts), self._info_dict
+        if type(acts) is dict:
+            info = {key: {rank_id: self._info_dict[key] for rank_id in acts} for key in self._info_dict}
+        else:
+            info = dict(self._info_dict)
+        return acts, info
 
 
 class PolicySpy(PolicyStub):
@@ -73,6 +77,11 @@ def workers_multi(env_multi, policy):
 
 
 @pytest.fixture
+def workers_irregular(multiple_envs_selective, policy):
+    return RolloutWorker(multiple_envs_selective, policy, regularized=False)
+
+
+@pytest.fixture
 def info_listener():
     class _InfoListener:
         def __init__(self):
@@ -94,11 +103,6 @@ def test_workers_roll_out_provided_environment(workers):
 
 def unwrap_rollout(batch):
     return batch['actions'], batch['rewards'], batch['dones'], batch['last_obs'], batch['infos']
-
-
-def get_rewards(batch):
-    a, r, d, l, i = unwrap_rollout(batch)
-    return r
 
 
 def test_roll_out_produces_batch_in_canonical_form(workers, env):
@@ -219,13 +223,113 @@ def assert_indices_equal(actual, expected):
     np.testing.assert_array_equal(actual, expected)
 
 
-def test_worker_stop_rollout_when_environment_has_terminated_if_configured_to_do_so(env, policy):
-    stopping_worker = RolloutWorker(env, policy, regularized=False)
+def test_irregular_worker_does_not_advance_terminated_environments(workers_irregular, multiple_envs_selective, policy):
+    setup_env_lengths(multiple_envs_selective, lengths=[9, 2, 6, 4, 1])
 
-    rollout = stopping_worker.rollout(5)
-    steps = len(rollout)
-    while len(rollout) == 5:
-        rollout = stopping_worker.rollout(5)
-        steps += len(rollout)
+    rollout = workers_irregular.rollout(5)
 
-    assert stopping_worker.total_steps == steps
+    assert_irregular_rollout_shape(rollout, (5, 2, 5, 4, 1))
+
+
+def setup_env_lengths(multiple_envs_selective, lengths):
+    for i, l in enumerate(lengths):
+        multiple_envs_selective.envs[i].set_is_done_at_step(l)
+
+
+def assert_irregular_rollout_shape(rollout, expected_shape):
+    for i, s in enumerate(expected_shape):
+        assert len(rollout.of(i)) == s, rollout.of(i)
+
+
+def test_irregular_worker_resets_environments_after_rollout(workers_irregular, multiple_envs_selective, policy):
+    setup_env_lengths(multiple_envs_selective, lengths=[9, 2, 6, 4, 1])
+
+    workers_irregular.rollout(5)
+
+    assert_all_attributes_eq(multiple_envs_selective.envs, 'num_resets_received', 1, 2, 1, 2, 2)
+
+
+def assert_all_attributes_eq(envs, attribute, *values):
+    for i, (e, v) in enumerate(zip(envs, values)):
+        assert getattr(e, attribute) == v, f"{e}[{i}].{attribute}"
+
+
+def test_irregular_worker_sets_last_observations_only_for_non_terminated_envs(workers_irregular,
+                                                                              multiple_envs_selective,
+                                                                              policy):
+    setup_envs(multiple_envs_selective, lengths=[9, 2, 6, 4, 5])
+
+    rollout = workers_irregular.rollout(5)
+
+    obs_shape = multiple_envs_selective.observation_space.shape
+    assert_irregular_rollout_key(rollout, 'last_obs',
+                                 {0: make_obs(obs_shape, rank_id=0), 2: make_obs(obs_shape, rank_id=2)})
+
+
+def setup_envs(multiple_envs_selective, lengths):
+    for rank_id, length in enumerate(lengths):
+        setup_env(multiple_envs_selective, rank_id, length)
+
+
+def setup_env(multi_env, rank_id, length):
+    shape = multi_env.observation_space.shape
+    multi_env.envs[rank_id].set_returns_obs(make_observations(shape, rank_id, length))
+    multi_env.envs[rank_id].set_returns_rewards([rank_id] * length)
+    multi_env.envs[rank_id].set_returns_infos([{'my_rank': rank_id}] * length)
+
+
+def make_observations(shape, rank_id, length):
+    return [make_obs(shape, rank_id)] * length
+
+
+def make_obs(shape, rank_id):
+    return np.ones(shape) * rank_id
+
+
+def assert_irregular_rollout_key(rollout, key, data_per_rank):
+    for rank_id in range(rollout.num_workers):
+        if rank_id in data_per_rank:
+            assert_tensors_equal(rollout.of(rank_id)[key], data_per_rank[rank_id])
+        else:
+            assert key not in rollout.of(rank_id)
+
+
+def test_irregular_worker_collects_data_from_each_worker_correctly(workers_irregular, multiple_envs_selective, policy):
+    setup_envs(multiple_envs_selective, lengths=[9, 2, 6, 4, 5])
+
+    rollout = workers_irregular.rollout(5)
+
+    assert_selective_rollout_of(rollout, policy.recorded_actions, rank_id=0, length=5, is_terminated=False)
+    assert_selective_rollout_of(rollout, policy.recorded_actions, rank_id=1, length=2, is_terminated=True)
+    assert_selective_rollout_of(rollout, policy.recorded_actions, rank_id=2, length=5, is_terminated=False)
+    assert_selective_rollout_of(rollout, policy.recorded_actions, rank_id=3, length=4, is_terminated=True)
+    assert_selective_rollout_of(rollout, policy.recorded_actions, rank_id=4, length=5, is_terminated=True)
+
+
+def unwrap_env_data(batch):
+    return batch['actions'], batch['rewards'], batch['dones'], batch['infos']
+
+
+def assert_selective_rollout_of(rollout, recorded_actions, rank_id, length, is_terminated):
+    actions, rewards, dones, infos = unwrap_env_data(rollout.of(rank_id))
+    assert_actions_equal(actions, [acts[rank_id] for acts in recorded_actions if rank_id in acts])
+    assert_tensors_equal(rewards, [rank_id] * length)
+    dones = [False] * length
+    if is_terminated:
+        dones[-1] = True
+    assert_tensors_equal(dones, dones)
+
+
+def test_irregular_worker_properly_adds_additional_info_from_policy(workers_irregular, multiple_envs_selective, policy):
+    policy.set_additional_information({'more': 'info'})
+    setup_envs(multiple_envs_selective, lengths=[9, 2, 6, 4, 5])
+
+    rollout = workers_irregular.rollout(5)
+
+    assert_irregular_rollout_key(rollout, 'more', {
+        0: ['info'] * 5,
+        1: ['info'] * 2,
+        2: ['info'] * 5,
+        3: ['info'] * 4,
+        4: ['info'] * 5,
+    })

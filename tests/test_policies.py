@@ -7,7 +7,7 @@ from gym.spaces import Box, Discrete
 
 from amarl.messenger import broadcast, Message
 from amarl.policies import A2CPolicy, A2CLSTMPolicy
-from amarl.workers import RolloutBatch
+from amarl.workers import Rollout
 
 
 @pytest.fixture(scope='session')
@@ -99,7 +99,7 @@ def get_action_probabilities(_, additional):
 
 
 def make_action_one_rewarded_rollout(a2c, rollout_length, static_obs, static_dones):
-    rollout = RolloutBatch()
+    rollout = Rollout()
     for _ in range(rollout_length):
         acts, additional = a2c.compute_actions(static_obs)
         elements = dict(actions=acts)
@@ -172,7 +172,7 @@ def send_done_message():
 
 
 def make_last_action_reward_conditioned_on_first_obs_rollout(policy, first_obs, rewarded_action, rollout_len):
-    rollout = RolloutBatch()
+    rollout = Rollout()
     for i in range(rollout_len):
         obs = first_obs if i == 0 else np.random.rand(*first_obs.shape).astype(np.float32)
         done = [i == rollout_len - 1]

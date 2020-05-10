@@ -1,22 +1,21 @@
-import time
 import logging
-from pathlib import Path
-
-import numpy as np
+from collections import defaultdict
 
 from amarl.messenger import broadcast, Message
-from amarl.metrics import PerformanceMeasure
 
 logger = logging.getLogger(__name__)
 
 
-class RolloutBatch:
+class Rollout:
     def __init__(self):
         self._data = dict()
         self._length = 0
 
     def __getitem__(self, item):
         return self._data[item]
+
+    def __contains__(self, item):
+        return item in self._data
 
     def append(self, new_elements):
         for k in new_elements:
@@ -32,6 +31,41 @@ class RolloutBatch:
     def __len__(self):
         return self._length
 
+    def __repr__(self):
+        return f"Rollout({self._data}, length={self._length})"  # f"Rollout({self._data}, length={self._length})"
+
+
+class IrregularRollout:
+    def __init__(self):
+        self._data = defaultdict(lambda: Rollout())
+
+    @property
+    def num_workers(self):
+        return len(self._data)
+
+    def of(self, rank_id):
+        return self._data[rank_id]
+
+    def append(self, new_elements):
+        update = defaultdict(lambda: dict())
+        for key, data_per_rank in new_elements.items():
+            for rank_id, data in data_per_rank.items():
+                update[rank_id][key] = data
+
+        for rank_id, data_per_rank in update.items():
+            self._data[rank_id].append(data_per_rank)
+
+    def set_element(self, key, new_elements):
+        for rank_id in new_elements:
+            self._data[rank_id].set_element(key, new_elements[rank_id])
+
+    def __repr__(self):
+        rpr = "IrregularRollout({\n"
+        for rank_id in self._data:
+            rpr += f"\t{rank_id}: {repr(self._data[rank_id])}\n"
+        rpr += "})"
+        return rpr
+
 
 class RolloutWorker:
     def __init__(self, env, policy, regularized=True):
@@ -46,28 +80,44 @@ class RolloutWorker:
         return self._total_steps
 
     def rollout(self, horizon):
-        rollout = RolloutBatch()
+        rollout = Rollout() if self._regularized else IrregularRollout()
         for _ in range(horizon):
-            actions, additional = self._policy.compute_actions(self._last_obs)
-            obs, rewards, dones, infos = self._env.step(actions.cpu().numpy())
-            broadcast(Message.TRAINING, infos=infos)
-            self._last_obs = obs
-
-            elements = dict(actions=actions, rewards=rewards, dones=dones, infos=infos)
-            elements.update(additional or {})
-            rollout.append(elements)
-
+            self._append_to_rollout_batch(rollout, *self._do_step())
             self._total_steps += len(self._env)
-            if any(dones):
-                self._reset_terminated_envs(dones)
-                if not self._regularized:
-                    break
+            self._handle_terminated_envs()
 
         rollout.set_element('last_obs', self._last_obs)
+        if not self._regularized:
+            self._reset_terminated_envs()
         return rollout
 
-    def _reset_terminated_envs(self, dones):
-        index_dones = np.where(dones)[0]
+    def _do_step(self):
+        actions, additional = self._policy.compute_actions(self._last_obs)
+        obs, rewards, dones, infos = self._env.step(actions)
+        broadcast(Message.TRAINING, infos=infos)
+        self._last_obs = obs
+        return actions, additional, dones, infos, rewards
+
+    @staticmethod
+    def _append_to_rollout_batch(rollout, actions, additional, dones, infos, rewards):
+        elements = dict(actions=actions, rewards=rewards, dones=dones, infos=infos)
+        elements.update(additional or {})
+        rollout.append(elements)
+
+    def _handle_terminated_envs(self):
+        if self._env.num_active_envs < len(self._env):
+            if self._regularized:
+                self._reset_terminated_envs()
+            else:
+                self._pop_terminated_obs()
+
+    def _reset_terminated_envs(self):
+        index_dones = list(self._env.terminated_env_ids)
         for idx_done in index_dones:
             self._last_obs[idx_done] = self._env.reset_env(idx_done)
         broadcast(Message.ENV_TERMINATED, index_dones=index_dones)
+
+    def _pop_terminated_obs(self):
+        for i in self._env.terminated_env_ids:
+            if i in self._last_obs:
+                del self._last_obs[i]

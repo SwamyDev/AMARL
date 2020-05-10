@@ -22,7 +22,10 @@ class RandomPolicy(Policy):
         self._action_space = action_space
 
     def compute_actions(self, observations):
-        return np.array([self._action_space.sample() for _ in range(len(observations))]), None
+        if type(observations) is dict:
+            return {rank: np.array([self._action_space.sample()]) for rank in observations}, None
+        else:
+            return np.array([self._action_space.sample() for _ in range(len(observations))]), None
 
     def learn_on_batch(self, batch):
         pass

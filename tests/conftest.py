@@ -1,4 +1,8 @@
+from collections import deque
+
 import pytest
+import numpy as np
+from gym.spaces import Box
 
 from amarl.wrappers import MultipleEnvs
 from tests.doubles.envs import EnvSpy
@@ -24,6 +28,16 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "rendered" in item.keywords:
             item.add_marker(skip_rendered)
+
+
+@pytest.fixture
+def obs_space():
+    return Box(0, 1, shape=(1, 8), dtype=np.float32)
+
+
+@pytest.fixture
+def default_obs(obs_space):
+    return np.zeros(obs_space.shape)
 
 
 @pytest.fixture

@@ -2,21 +2,11 @@ import gym
 import pytest
 import numpy as np
 import torch
-from gym.spaces import Box
 
 from amarl.wrappers import MultipleEnvs, active_gym, RenderedObservation, NoOpResetEnv, MaxAndSkipEnv, EpisodicLifeEnv, \
     SignReward, TorchObservation, StackFrames, OriginalReturnWrapper
+from tests import assert_selective_obs_eq, assert_obs_eq
 from tests.doubles.envs import EnvSpy
-
-
-@pytest.fixture
-def obs_space():
-    return Box(0, 1, shape=(1, 8), dtype=np.float32)
-
-
-@pytest.fixture
-def default_obs(obs_space):
-    return np.zeros(obs_space.shape)
 
 
 @pytest.fixture
@@ -134,12 +124,6 @@ def test_multiple_envs_return_data_selectively_if_selective_actions_are_passed(m
     assert infos == {1: {'info': "dummy"}, 4: {'info': "dummy"}}
 
 
-def assert_selective_obs_eq(actual, expected):
-    assert set(actual.keys()) == set(expected.keys())
-    for k in actual:
-        assert_obs_eq(actual[k], expected[k])
-
-
 def test_multiple_envs_reactivates_environment_on_reset(multiple_envs_selective, default_obs):
     multiple_envs_selective.reset()
     multiple_envs_selective.envs[2].set_is_done_at_step(1)
@@ -225,10 +209,6 @@ def test_max_and_skip_returns_maximum_of_last_two_frames(env_spy, skip_env):
                              np.ones(env_spy.observation_space.shape), np.ones(env_spy.observation_space.shape) * 0.5])
     skip_env.reset()
     assert_obs_eq(unwrap_obs(skip_env.step(1)), np.ones(env_spy.observation_space.shape))
-
-
-def assert_obs_eq(actual, expected):
-    np.testing.assert_equal(actual, expected)
 
 
 def test_max_and_skip_pass_on_last_info(env_spy, skip_env):
