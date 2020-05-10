@@ -102,31 +102,16 @@ def test_workers_roll_out_provided_environment(workers):
 
 
 def unwrap_rollout(batch):
-    return batch['actions'], batch['rewards'], batch['dones'], batch['last_obs'], batch['infos']
+    return batch['rewards'], batch['dones'], batch['last_obs'], batch['infos']
 
 
 def test_roll_out_produces_batch_in_canonical_form(workers, env):
     rollout = workers.rollout(10)
-    actions, rewards, dones, last_obs, infos = unwrap_rollout(rollout)
-    assert len(actions) == 10 and actions[0].shape == (1,)
+    rewards, dones, last_obs, infos = unwrap_rollout(rollout)
     assert len(rewards) == 10 and rewards[0].shape == (1,)
     assert len(dones) == 10 and dones[0].shape == (1,)
     assert last_obs.shape == (1, *env.observation_space.shape)
     assert len(infos) == 10
-
-
-def test_roll_out_batch_contains_all_correct_actions(workers, policy):
-    rollout = workers.rollout(3)
-    assert_actions_equal(get_actions(rollout), np.array(policy.recorded_actions))
-
-
-def get_actions(rollout):
-    a, r, d, l, i = unwrap_rollout(rollout)
-    return a
-
-
-def assert_actions_equal(actual, expected):
-    np.testing.assert_array_equal(actual, expected)
 
 
 def test_automatically_reset_terminated_environments(workers):
@@ -140,14 +125,13 @@ def test_automatically_reset_terminated_environments(workers):
 
 
 def get_dones(rollout):
-    a, r, d, l, i = unwrap_rollout(rollout)
+    r, d, l, i = unwrap_rollout(rollout)
     return d
 
 
 def test_rollout_produces_correct_batch_shapes_with_multiple_environments(workers_multi, env_multi):
     rollout = workers_multi.rollout(10)
-    actions, rewards, dones, last_obs, infos = unwrap_rollout(rollout)
-    assert actions[0].shape == (len(env_multi),)
+    rewards, dones, last_obs, infos = unwrap_rollout(rollout)
     assert rewards[0].shape == (len(env_multi),)
     assert dones[0].shape == (len(env_multi),)
     assert last_obs.shape == (len(env_multi), *env_multi.observation_space.shape)
@@ -299,20 +283,19 @@ def test_irregular_worker_collects_data_from_each_worker_correctly(workers_irreg
 
     rollout = workers_irregular.rollout(5)
 
-    assert_selective_rollout_of(rollout, policy.recorded_actions, rank_id=0, length=5, is_terminated=False)
-    assert_selective_rollout_of(rollout, policy.recorded_actions, rank_id=1, length=2, is_terminated=True)
-    assert_selective_rollout_of(rollout, policy.recorded_actions, rank_id=2, length=5, is_terminated=False)
-    assert_selective_rollout_of(rollout, policy.recorded_actions, rank_id=3, length=4, is_terminated=True)
-    assert_selective_rollout_of(rollout, policy.recorded_actions, rank_id=4, length=5, is_terminated=True)
+    assert_selective_rollout_of(rollout, rank_id=0, length=5, is_terminated=False)
+    assert_selective_rollout_of(rollout, rank_id=1, length=2, is_terminated=True)
+    assert_selective_rollout_of(rollout, rank_id=2, length=5, is_terminated=False)
+    assert_selective_rollout_of(rollout, rank_id=3, length=4, is_terminated=True)
+    assert_selective_rollout_of(rollout, rank_id=4, length=5, is_terminated=True)
 
 
 def unwrap_env_data(batch):
-    return batch['actions'], batch['rewards'], batch['dones'], batch['infos']
+    return batch['rewards'], batch['dones'], batch['infos']
 
 
-def assert_selective_rollout_of(rollout, recorded_actions, rank_id, length, is_terminated):
-    actions, rewards, dones, infos = unwrap_env_data(rollout.of(rank_id))
-    assert_actions_equal(actions, [acts[rank_id] for acts in recorded_actions if rank_id in acts])
+def assert_selective_rollout_of(rollout, rank_id, length, is_terminated):
+    rewards, dones, infos = unwrap_env_data(rollout.of(rank_id))
     assert_tensors_equal(rewards, [rank_id] * length)
     dones = [False] * length
     if is_terminated:

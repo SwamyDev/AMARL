@@ -100,8 +100,8 @@ class A2CPolicy(ActorCriticPolicy):
 
     def compute_actions(self, observations):
         acts_dist, vs = self._model(torch.from_numpy(observations).to(self._device))
-        a = acts_dist.sample()
-        return a, {'vs': vs.squeeze(dim=1), 'act_dists': acts_dist}
+        a = acts_dist.sample().detach()
+        return a.cpu().numpy(), {'actions': a, 'vs': vs.squeeze(dim=1), 'act_dists': acts_dist}
 
     def learn_on_batch(self, rollout):
         _, next_vs = self._model(torch.from_numpy(rollout['last_obs']).to(self._device))
@@ -126,18 +126,19 @@ class A2CLSTMPolicy(ActorCriticPolicy, ListeningMixin):
             self._hidden = self._model.get_initial_state()
             self._pending_reset = False
 
-        acts_dist, vs, self._hidden = self._model(torch.from_numpy(observations).to(self._device), self._hidden)
-        a = acts_dist.sample()
-        return a, {'vs': vs.squeeze(dim=1), 'act_dists': acts_dist}
+        acts_dist, vs, self._hidden = self._model(torch.from_numpy(observations[0]).to(self._device), self._hidden)
+        a = acts_dist.sample().detach()
+        return {0: a.cpu().numpy()}, {'actions': {0: a}, 'vs': {0: vs.squeeze(dim=1)}, 'act_dists': {0: acts_dist}}
 
     def learn_on_batch(self, rollout):
-        is_terminal = rollout['dones'][-1][0]
-        next_return = torch.zeros(*rollout['rewards'][0].shape).to(self._device)
+        batch = rollout.of(0)
+        is_terminal = batch['dones'][-1][0]
+        next_return = torch.zeros(*batch['rewards'][0].shape).to(self._device)
         if not is_terminal:
-            _, next_vs, self._hidden = self._model(torch.from_numpy(rollout['last_obs']).to(self._device), self._hidden)
+            _, next_vs, self._hidden = self._model(torch.from_numpy(batch['last_obs']).to(self._device), self._hidden)
             next_return = next_vs.squeeze(dim=1).detach()
 
-        self._train_actor_critic_on(rollout, next_return)
+        self._train_actor_critic_on(batch, next_return)
 
         self._hidden[0].detach_()
         self._hidden[1].detach_()

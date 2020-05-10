@@ -92,16 +92,16 @@ class RolloutWorker:
         return rollout
 
     def _do_step(self):
-        actions, additional = self._policy.compute_actions(self._last_obs)
+        actions, train_data = self._policy.compute_actions(self._last_obs)
         obs, rewards, dones, infos = self._env.step(actions)
         broadcast(Message.TRAINING, infos=infos)
         self._last_obs = obs
-        return actions, additional, dones, infos, rewards
+        return train_data, dones, infos, rewards
 
     @staticmethod
-    def _append_to_rollout_batch(rollout, actions, additional, dones, infos, rewards):
-        elements = dict(actions=actions, rewards=rewards, dones=dones, infos=infos)
-        elements.update(additional or {})
+    def _append_to_rollout_batch(rollout, train_data, dones, infos, rewards):
+        elements = dict(rewards=rewards, dones=dones, infos=infos)
+        elements.update(train_data or {})
         rollout.append(elements)
 
     def _handle_terminated_envs(self):
