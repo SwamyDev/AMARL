@@ -1,12 +1,12 @@
 import gym
-import pytest
 import numpy as np
+import pytest
 import torch
 
 from amarl.messenger import Message, subscription_to
 from amarl.policies import RandomPolicy
 from amarl.workers import RolloutWorker
-from amarl.wrappers import MultipleEnvs
+from amarl.wrappers import MultipleEnvs, ToTorch
 
 
 class PolicyStub(RandomPolicy):
@@ -45,15 +45,29 @@ class EnvSpyWrapper(gym.Wrapper):
         self.received_resets = 0
         self.last_init_observation = None
 
+    def step(self, action):
+        return self.env.step(action)
+
     def reset(self, **kwargs):
         self.received_resets += 1
-        self.last_init_observation = super().reset(**kwargs)
+        self.last_init_observation = self.env.reset()
         return self.last_init_observation
 
 
 @pytest.fixture
-def env():
-    return MultipleEnvs(lambda: gym.make('CartPole-v0'), 1)
+def make_env():
+    def fn():
+        e = gym.make('CartPole-v0')
+        e = ToTorch(e, force_dtype=torch.float32)
+        e = EnvSpyWrapper(e)
+        return e
+
+    return fn
+
+
+@pytest.fixture
+def env(make_env):
+    return MultipleEnvs(make_env, 1)
 
 
 @pytest.fixture
@@ -67,8 +81,8 @@ def workers(env, policy):
 
 
 @pytest.fixture
-def env_multi():
-    return MultipleEnvs(lambda: EnvSpyWrapper(gym.make('CartPole-v0')), 5)
+def env_multi(make_env):
+    return MultipleEnvs(make_env, 5)
 
 
 @pytest.fixture
@@ -157,7 +171,7 @@ def test_rollout_selectively_sets_init_observation_in_multi_env_settings_after_r
     reset_envs = [(i, e) for i, e in enumerate(env_multi.envs) if e.received_resets == 2]
     workers_multi.rollout(1)
     for idx, env in reset_envs:
-        assert_tensors_equal(policy.received_observations[idx], env.last_init_observation.astype(np.float32))
+        assert_tensors_equal(policy.received_observations[idx], env.last_init_observation)
 
 
 def test_rollout_add_passes_on_additional_information_of_action_compute(workers, env, policy):

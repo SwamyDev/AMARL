@@ -1,7 +1,9 @@
 import gym
 import numpy as np
+import pytest
+import torch
 
-from amarl.processing import proc_screen, get_cart_pos_normalized
+from amarl.processing import proc_screen, get_cart_pos_normalized, np_dtype_to_torch_dtype
 
 
 def test_processing_image_data_to_fit_pytorch_model_dimensions():
@@ -29,3 +31,24 @@ def test_get_normalized_position_of_cart_from_cart_pole_env():
 def repeat_action(env, action, n):
     for _ in range(n):
         env.step(action)
+
+
+def test_casting_numpy_to_torch_dtype():
+    assert np_dtype_to_torch_dtype(np.float) == torch.float64
+    assert np_dtype_to_torch_dtype(np.float64) == torch.float64
+    assert np_dtype_to_torch_dtype(np.float32) == torch.float32
+    assert np_dtype_to_torch_dtype(np.float16) == torch.float16
+    assert np_dtype_to_torch_dtype(np.long) == torch.long
+    assert np_dtype_to_torch_dtype(np.int16) == torch.int16
+    assert np_dtype_to_torch_dtype(np.short) == torch.int16
+    assert np_dtype_to_torch_dtype(np.int64) == torch.int64
+    assert np_dtype_to_torch_dtype(np.int) == torch.int64
+    assert np_dtype_to_torch_dtype(np.uint8) == torch.uint8
+    assert np_dtype_to_torch_dtype(np.int8) == torch.int8
+    assert np_dtype_to_torch_dtype(np.char) == torch.int8
+    assert np_dtype_to_torch_dtype(np.bool) == torch.bool
+
+
+def test_raise_not_implemented_error_when_cast_is_not_implemented():
+    with pytest.raises(NotImplementedError):
+        np_dtype_to_torch_dtype(np.longlong)

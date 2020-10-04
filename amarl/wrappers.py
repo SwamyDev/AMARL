@@ -8,7 +8,7 @@ import torchvision.transforms as T
 from contextlib import contextmanager
 from gym.spaces import Box
 from PIL import Image
-from amarl.processing import get_cart_pos_normalized, proc_screen
+from amarl.processing import get_cart_pos_normalized, proc_screen, np_dtype_to_torch_dtype
 
 
 class MultipleEnvs(gym.Env):
@@ -52,20 +52,22 @@ class MultipleEnvs(gym.Env):
         if self._is_selective:
             obs, rewards, dones, infos = dict(), dict(), dict(), dict()
         else:
-            obs = np.empty((len(self), *self.observation_space.shape), dtype=self.observation_space.dtype)
+            dt = np_dtype_to_torch_dtype(self.observation_space.dtype)
+            obs = torch.empty(len(self), *self.observation_space.shape, dtype=dt)
             rewards = np.empty((len(self),), dtype=np.float)
             dones = np.empty((len(self),), dtype=np.bool)
             infos = np.empty((len(self),), dtype=np.object)
         return dones, infos, obs, rewards
 
     def reset(self):
+        dt = np_dtype_to_torch_dtype(self.observation_space.dtype)
         if self._is_selective:
             obs = dict()
         else:
-            obs = np.empty((len(self), *self.observation_space.shape), dtype=self.observation_space.dtype)
+            obs = torch.empty(len(self), *self.observation_space.shape, dtype=dt)
 
         for i in range(len(self)):
-            obs[i] = self.reset_env(i)
+            obs[i] = self.reset_env(i).to(dtype=dt)
         return obs
 
     def reset_env(self, rank):
@@ -231,7 +233,7 @@ class TorchObservation(gym.ObservationWrapper):
         super(TorchObservation, self).__init__(env)
         image_size = image_size or (84, 84)
         channels = 1 if grayscale else 3
-        self.observation_space = Box(0, 1, shape=(channels, *image_size))
+        self.observation_space = Box(0, 1, shape=(channels, *image_size), dtype=np.float32)
 
         self.resize = T.Compose(self._make_image_pipe_operations(grayscale, image_size))
         self._last_frame = None
@@ -278,6 +280,18 @@ class StackFrames(gym.Wrapper):
     def _get_obs(self):
         assert self._cur_size == self._size
         return torch.cat(list(self._frames), dim=0)
+
+
+class ToTorch(gym.ObservationWrapper):
+    def __init__(self, env, force_dtype=None):
+        super().__init__(env)
+        self._force_dtype = force_dtype
+
+    def observation(self, observation):
+        t = torch.from_numpy(observation)
+        if self._force_dtype is not None:
+            return t.to(dtype=self._force_dtype)
+        return t
 
 
 @contextmanager

@@ -9,6 +9,10 @@ class PolicyOptimizationTrainer:
         self._rollout_horizon = rollout_horizon
 
     @property
+    def policy(self):
+        return self._policy
+
+    @property
     def steps_trained(self):
         return self._worker.total_steps
 

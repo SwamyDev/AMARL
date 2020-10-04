@@ -99,12 +99,12 @@ class A2CPolicy(ActorCriticPolicy):
                          value_loss_weight, gradient_clip, device)
 
     def compute_actions(self, observations):
-        acts_dist, vs = self._model(torch.from_numpy(observations).to(self._device))
+        acts_dist, vs = self._model(observations.to(self._device))
         a = acts_dist.sample().detach()
         return a.cpu().numpy(), {'actions': a, 'vs': vs.squeeze(dim=1), 'act_dists': acts_dist}
 
     def learn_on_batch(self, rollout):
-        _, next_vs = self._model(torch.from_numpy(rollout['last_obs']).to(self._device))
+        _, next_vs = self._model(rollout['last_obs'].to(self._device))
         next_return = next_vs.squeeze(dim=1).detach()
         self._train_actor_critic_on(rollout, next_return)
 
@@ -126,7 +126,7 @@ class A2CLSTMPolicy(ActorCriticPolicy, ListeningMixin):
             self._hidden = self._model.get_initial_state()
             self._pending_reset = False
 
-        acts_dist, vs, self._hidden = self._model(torch.from_numpy(observations[0]).to(self._device), self._hidden)
+        acts_dist, vs, self._hidden = self._model(observations[0].to(self._device), self._hidden)
         a = acts_dist.sample().detach()
         return {0: a.cpu().numpy()}, {'actions': {0: a}, 'vs': {0: vs.squeeze(dim=1)}, 'act_dists': {0: acts_dist}}
 

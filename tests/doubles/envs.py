@@ -2,6 +2,7 @@ from collections import deque
 
 import gym
 import numpy as np
+import torch
 
 
 class EnvStub(gym.Env):
@@ -58,11 +59,14 @@ class EnvStub(gym.Env):
         d = False if self._return_obs is None else len(self._return_obs) == 0
         d = d if self._return_rewards is None else len(self._return_rewards) == 0
         d = d if self._is_done_at_step is None else self._steps == self._is_done_at_step
-        return o, r, d, i
+        return torch.from_numpy(o), r, d, i
 
     def reset(self):
         self._steps = 0
-        return self._default_obs
+        return torch.from_numpy(self._default_obs)
+
+    def seed(self, seed=None):
+        pass
 
     def render(self, mode='human'):
         pass

@@ -19,7 +19,7 @@ def device():
 
 @pytest.fixture(scope='session')
 def fixed_seed():
-    return random_seed(42)
+    return random_seed(21)
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def a2c_lstm(linear_obs_space, basic_action_space, fixed_seed, device):
 @pytest.fixture
 def make_img_batch(img_obs_space):
     def factory(size=3):
-        return np.random.rand(size, *img_obs_space.shape).astype(np.float32)
+        return torch.rand(size, *img_obs_space.shape, dtype=torch.float32)
 
     return factory
 
@@ -59,8 +59,8 @@ def make_img_batch(img_obs_space):
 @pytest.fixture
 def make_linear_batch(linear_obs_space):
     def factory(size=3):
-        obs = np.random.rand(1, *linear_obs_space.shape).astype(np.float32)
-        return {rank_id: np.array(obs) for rank_id in range(size)}
+        obs = torch.rand(1, *linear_obs_space.shape, dtype=torch.float32)
+        return {rank_id: obs.clone() for rank_id in range(size)}
 
     return factory
 
@@ -126,7 +126,8 @@ def action_distribution(actions, index):
 
 
 def test_a2c_lstm_can_be_trained_to_memorize_first_observation_and_condition_an_action_on_it(a2c_lstm,
-                                                                                             make_linear_batch):
+                                                                                             make_linear_batch,
+                                                                                             fixed_seed):
     rollout = 5
     batch_size = 1
     left_obs = make_linear_batch(batch_size)
@@ -170,7 +171,7 @@ def send_done_message(indices):
 
 class _LstmEnv:
     def __init__(self, init_obs, rewarded_action, length):
-        self._init_obs = init_obs
+        self._init_obs = {k: init_obs[k].clone() for k in init_obs}
         self._next_obs = init_obs
         self._obs_shape = init_obs[0].shape
         self._rewarded_action = rewarded_action
@@ -185,11 +186,11 @@ class _LstmEnv:
             reward = 1.0 if actions[0] == self._rewarded_action else -1.0
             send_done_message(obs.keys())
 
-        self._next_obs = {rank_id: np.random.rand(*self._obs_shape).astype(np.float32) for rank_id in obs}
+        self._next_obs = {rank_id: torch.rand(*self._obs_shape, dtype=torch.float32) for rank_id in obs}
         return obs, {rank_id: np.array([reward]) for rank_id in obs}, {rank_id: np.array([done]) for rank_id in obs}, {}
 
     def reset(self):
-        self._next_obs = self._init_obs
+        self._next_obs = {k: self._init_obs[k].clone() for k in self._init_obs}
         return self._next_obs
 
 
