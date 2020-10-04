@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
 
 from amarl.metrics import PerformanceMeasure
@@ -53,7 +54,17 @@ class ListeningMixin:
         self.close()
 
 
-class TrainingMonitor(ListeningMixin):
+class Monitor(ABC):
+    @abstractmethod
+    def start(self):
+        pass
+
+    @abstractmethod
+    def stop(self):
+        pass
+
+
+class TrainingMonitor(Monitor, ListeningMixin):
     TRAINING_LINE_FORMAT = "steps: {steps:>7}, average reward:\t{avg_reward:+.2f}"
     PERFORMANCE_LINE_FORMAT = "steps: {steps:>7}, performance:\t{performance:.2f} steps/s"
 
@@ -67,10 +78,14 @@ class TrainingMonitor(ListeningMixin):
         self._last_return_logged = 0
 
         self._perf_measure = PerformanceMeasure()
-        self._perf_measure.start()
         self._last_performance_logged = 0
 
+    def start(self):
+        self._perf_measure.start()
         self.subscribe_to(Message.TRAINING, self)
+
+    def stop(self):
+        self.close()
 
     @property
     def captured_returns(self):
@@ -106,13 +121,56 @@ class TrainingMonitor(ListeningMixin):
             self._perf_measure.start()
 
 
+class TensorboardMonitor(Monitor, ListeningMixin):
+    def __init__(self, writer, scalars):
+        super().__init__()
+        self._writer = writer
+        self._scalars = scalars
+        self._step = 0
+
+    @property
+    def step(self):
+        return self._step
+
+    def start(self):
+        self.subscribe_to(Message.TRAINING, self)
+
+    def stop(self):
+        self.close()
+
+    def __call__(self, **message):
+        infos = message['infos']
+        for s in self._scalars:
+            for i in infos:
+                if s in i:
+                    self._writer.add_scalar(self._scalars[s], i[s], self._step)
+        self._step += 1
+
+
+class CombinedMonitor(Monitor):
+    def __init__(self, monitors):
+        self._monitors = monitors
+
+    @property
+    def monitors(self):
+        return self._monitors
+
+    def start(self):
+        for m in self._monitors:
+            m.start()
+
+    def stop(self):
+        for m in self._monitors:
+            m.stop()
+
+
 @contextmanager
-def training_monitor(logger=None, progress_averaging=100, performance_sample_size=1000):
-    m = TrainingMonitor(logger, progress_averaging, performance_sample_size)
+def monitor(m):
     try:
+        m.start()
         yield m
     finally:
-        m.close()
+        m.stop()
 
 
 def broadcast(message, **kwargs):

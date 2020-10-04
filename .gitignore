@@ -137,6 +137,8 @@ dmypy.json
 .idea/**/usage.statistics.xml
 .idea/**/dictionaries
 .idea/**/shelf
+.idea/AMARL.iml
+.idea/**/deployment.xml
 
 # Generated files
 .idea/**/contentModel.xml
