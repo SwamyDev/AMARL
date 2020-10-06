@@ -1,7 +1,7 @@
 import logging
 import time
 
-from amarl.messenger import monitor, broadcast, Message, TrainingMonitor, ListeningMixin, CombinedMonitor, Monitor, \
+from amarl.messenger import monitor, broadcast, Message, LogMonitor, ListeningMixin, CombinedMonitor, Monitor, \
     TensorboardMonitor
 from amarl.metrics import time_scope
 
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def make_training_monitor(logger=None, progress_averaging=100, performance_sample_size=1000):
-    return TrainingMonitor(logger, progress_averaging, performance_sample_size)
+    return LogMonitor(logger, progress_averaging, performance_sample_size)
 
 
 def test_training_monitor_receives_and_logs_training_message(caplog):
@@ -170,11 +170,16 @@ class SummaryWriterSpy:
 
 def test_tensorboard_monitor_writes_specified_infos():
     writer = SummaryWriterSpy()
-    tb_monitor = TensorboardMonitor(writer, scalars=dict(episodic_return='returns/episodic'))
+    tb_monitor = TensorboardMonitor(writer, progress_averaging=2, scalars=dict(episodic_return='returns/episodic'))
     with monitor(tb_monitor):
-        broadcast(Message.TRAINING, infos=[{'episodic_return': 2}])
+        broadcast(Message.TRAINING, infos=[{'episodic_return': 2}] * 2)
+        broadcast(Message.TRAINING, infos=[{'episodic_return': None}])
         broadcast(Message.TRAINING, infos=[{'episodic_return': -0.5, 'other_value': "its a string"}])
     broadcast(Message.TRAINING, infos=[{'episodic_return': 2}])
 
-    assert writer.received_scalars == [('returns/episodic', 2, 0), ('returns/episodic', -0.5, 1)]
-    assert tb_monitor.step == 2
+    assert writer.received_scalars == [
+        ('returns/episodic', 2, 0),
+        ('returns/episodic', 2, 1),
+        ('returns/episodic', 0.75, 3)
+    ]
+    assert tb_monitor.step == 4

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections import deque
 from contextlib import contextmanager
 
 from amarl.metrics import PerformanceMeasure
@@ -64,7 +65,7 @@ class Monitor(ABC):
         pass
 
 
-class TrainingMonitor(Monitor, ListeningMixin):
+class LogMonitor(Monitor, ListeningMixin):
     TRAINING_LINE_FORMAT = "steps: {steps:>7}, average reward:\t{avg_reward:+.2f}"
     PERFORMANCE_LINE_FORMAT = "steps: {steps:>7}, performance:\t{performance:.2f} steps/s"
 
@@ -122,9 +123,10 @@ class TrainingMonitor(Monitor, ListeningMixin):
 
 
 class TensorboardMonitor(Monitor, ListeningMixin):
-    def __init__(self, writer, scalars):
+    def __init__(self, writer, progress_averaging, scalars):
         super().__init__()
         self._writer = writer
+        self._window = deque(maxlen=progress_averaging)
         self._scalars = scalars
         self._step = 0
 
@@ -140,11 +142,12 @@ class TensorboardMonitor(Monitor, ListeningMixin):
 
     def __call__(self, **message):
         infos = message['infos']
-        for s in self._scalars:
-            for i in infos:
-                if s in i:
-                    self._writer.add_scalar(self._scalars[s], i[s], self._step)
-        self._step += 1
+        for i in infos:
+            for s in self._scalars:
+                if s in i and i[s]:
+                    self._window.append(i[s])
+                    self._writer.add_scalar(self._scalars[s], sum(self._window) / len(self._window), self._step)
+            self._step += 1
 
 
 class CombinedMonitor(Monitor):
