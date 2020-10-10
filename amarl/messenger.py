@@ -78,7 +78,10 @@ class TrainingMonitor(ListeningMixin):
 
     def __call__(self, **message):
         infos = message['infos']
-        self._captured_returns.extend([i['episodic_return'] for i in infos if i.get('episodic_return')])
+        for rank_id in infos:
+            if 'episodic_return' in infos[rank_id] and infos[rank_id]['episodic_return']:
+                self._captured_returns.append(infos[rank_id]['episodic_return'])
+
         self._mum_calls += len(infos)
         self._print_train_progress()
         self._print_wall_clock_performance()

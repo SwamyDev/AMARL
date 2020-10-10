@@ -72,8 +72,8 @@ class TellDoneEnv(gym.Env):
 
     def reset(self):
         self._final_step = self._random_state.randint(self.max_len)
-        self._init_obs = np.zeros(self.observation_space.shape)
-        self._init_obs[self._final_step] = 1
+        self._init_obs = np.zeros(self.observation_space.shape).astype(self.observation_space.dtype)
+        self._init_obs[self._final_step] = 1.0
         self._steps = 0
         return self._init_obs
 

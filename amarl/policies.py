@@ -114,34 +114,52 @@ class A2CLSTMPolicy(ActorCriticPolicy, ListeningMixin):
                  value_loss_weight=0.5, gradient_clip=30, device='cpu'):
         super().__init__(A2CLinearLSTMNet(observation_space.shape[0], action_space.n), optimizer, gamma,
                          entropy_loss_weight, value_loss_weight, gradient_clip, device)
-        self._hidden = self._model.get_initial_state()
-        self._pending_reset = False
+        self._hidden = None
+        self._pending_reset = []
         self.subscribe_to(Message.ENV_TERMINATED, self._on_environment_terminated)
 
-    def _on_environment_terminated(self, **_info):
-        self._pending_reset = True
+    def _on_environment_terminated(self, index_dones):
+        if type(index_dones) is np.ndarray:
+            index_dones = index_dones.tolist()
+        self._pending_reset = index_dones
 
     def compute_actions(self, observations):
-        if self._pending_reset:
-            self._hidden = self._model.get_initial_state()
-            self._pending_reset = False
+        if self._hidden is None:
+            self._hidden = {rank_id: self._model.get_initial_state() for rank_id in observations}
 
-        acts_dist, vs, self._hidden = self._model(torch.from_numpy(observations[0]).to(self._device), self._hidden)
-        a = acts_dist.sample().detach()
-        return {0: a.cpu().numpy()}, {'actions': {0: a}, 'vs': {0: vs.squeeze(dim=1)}, 'act_dists': {0: acts_dist}}
+        for rank_id in self._pending_reset:
+            self._hidden[rank_id] = self._model.get_initial_state()
+        self._pending_reset.clear()
+
+        actions, train_data = {}, {'actions': {}, 'vs': {}, 'act_dists': {}}
+        for rank_id, obs in observations.items():
+            acts_dist, vs, hc = self._model(torch.from_numpy(observations[rank_id]).unsqueeze(0).to(self._device),
+                                            self._hidden[rank_id])
+            a = acts_dist.sample().detach()
+            self._hidden[rank_id] = hc
+
+            actions[rank_id] = a.cpu().numpy()
+            train_data['actions'][rank_id] = a
+            train_data['vs'][rank_id] = vs.squeeze(dim=1)
+            train_data['act_dists'][rank_id] = acts_dist
+
+        return actions, train_data
 
     def learn_on_batch(self, rollout):
-        batch = rollout.of(0)
-        is_terminal = batch['dones'][-1][0]
-        next_return = torch.zeros(*batch['rewards'][0].shape).to(self._device)
-        if not is_terminal:
-            _, next_vs, self._hidden = self._model(torch.from_numpy(batch['last_obs']).to(self._device), self._hidden)
-            next_return = next_vs.squeeze(dim=1).detach()
+        for rank_id in rollout.worker_ids:
+            batch = rollout.of(rank_id)
+            next_return = torch.zeros(*batch['rewards'][0].shape).to(self._device)
+            is_terminal = batch['dones'][-1]
+            if not is_terminal:
+                _, next_vs, hc = self._model(torch.from_numpy(batch['last_obs']).unsqueeze(0).to(self._device),
+                                             self._hidden[rank_id])
+                self._hidden[rank_id] = hc
+                next_return = next_vs.squeeze(dim=1).detach()
 
-        self._train_actor_critic_on(batch, next_return)
+            self._train_actor_critic_on(batch, next_return)
 
-        self._hidden[0].detach_()
-        self._hidden[1].detach_()
+            self._hidden[rank_id][0].detach_()
+            self._hidden[rank_id][1].detach_()
 
 
 class CommunicationPolicy(Policy):

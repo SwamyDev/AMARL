@@ -29,7 +29,7 @@ class A2CLSTMTrainer(PolicyOptimizationTrainer):
     def __init__(self, env, config):
         policy = A2CLSTMPolicy(env.observation_space, env.action_space, optimizer=config.get('optimizer'),
                                gradient_clip=config.get('gradient_clip', 5), device=config.get('device', 'cpu'))
-        worker = RolloutWorker(env, policy, regularized=True)
+        worker = RolloutWorker(env, policy, regularized=False)
         super().__init__(worker, policy, config['rollout_horizon'])
 
 

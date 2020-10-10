@@ -39,6 +39,10 @@ class MultipleEnvs(gym.Env):
             if idx in self.terminated_env_ids:
                 raise self.TerminatedEnvironmentError(f"Passing an action to terminated environment: {idx}")
             o, r, d, i = self._envs[idx].step(action[idx])
+            if self._is_selective:
+                r = np.array([r], dtype=np.float)
+                d = np.array([d], dtype=np.bool)
+
             obs[idx] = o
             rewards[idx] = r
             dones[idx] = d

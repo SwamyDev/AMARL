@@ -43,6 +43,10 @@ class IrregularRollout:
     def num_workers(self):
         return len(self._data)
 
+    @property
+    def worker_ids(self):
+        return self._data.keys()
+
     def of(self, rank_id):
         return self._data[rank_id]
 

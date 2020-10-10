@@ -128,7 +128,7 @@ def action_distribution(actions, index):
 def test_a2c_lstm_can_be_trained_to_memorize_first_observation_and_condition_an_action_on_it(a2c_lstm,
                                                                                              make_linear_batch):
     rollout = 5
-    batch_size = 1
+    batch_size = 5
     left_obs = make_linear_batch(batch_size)
     right_obs = make_linear_batch(batch_size)
 
@@ -137,7 +137,7 @@ def test_a2c_lstm_can_be_trained_to_memorize_first_observation_and_condition_an_
     initial_dist = get_last_action_dists(a2c_lstm, right_obs, rollout)
     assert_is_roughly_uniform(initial_dist)
 
-    for _ in range(1200):
+    for _ in range(1000):
         first_obs, rewarded_a = (left_obs, 0) if np.random.randint(2) == 0 else (right_obs, 1)
         a2c_lstm.learn_on_batch(
             make_last_action_reward_conditioned_on_first_obs_rollout(a2c_lstm, first_obs, rewarded_a, rollout))
@@ -165,7 +165,7 @@ def get_last_action_dists(policy, obs, rollout):
 
 
 def send_done_message(indices):
-    broadcast(Message.ENV_TERMINATED, index_dones=np.array(indices))
+    broadcast(Message.ENV_TERMINATED, index_dones=np.array(list(indices)))
 
 
 class _LstmEnv:
@@ -185,7 +185,8 @@ class _LstmEnv:
             reward = 1.0 if actions[0] == self._rewarded_action else -1.0
             send_done_message(obs.keys())
 
-        self._next_obs = {rank_id: np.random.rand(*self._obs_shape).astype(np.float32) for rank_id in obs}
+        rnd_obs = np.zeros(self._obs_shape).astype(np.float32)
+        self._next_obs = {rank_id: rnd_obs for rank_id in obs}
         return obs, {rank_id: np.array([reward]) for rank_id in obs}, {rank_id: np.array([done]) for rank_id in obs}, {}
 
     def reset(self):
