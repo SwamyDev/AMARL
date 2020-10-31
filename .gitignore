@@ -206,3 +206,6 @@ fabric.properties
 amarl/_version.py
 *.done
 *.mp4
+
+# Logging directories
+runs/

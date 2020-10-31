@@ -18,7 +18,7 @@ setup(
     url='https://github.com/SwamyDev/amarl',
     author='Bernhard Raml',
     packages=find_packages(include=['amarl', 'amarl.*']),
-    install_requires=["ray[rllib]", "torch"],
+    install_requires=["ray[rllib]", "torch", "matplotlib"],
     extras_require={"test": ['pytest', 'pytest-cov', 'gym-quickcheck']},
     include_package_data=True,
     zip_safe=False,
